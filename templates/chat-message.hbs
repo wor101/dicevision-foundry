@@ -1,0 +1,22 @@
+<div class="dicevision-roll">
+  <div class="dicevision-header">
+    <span class="dicevision-label">{{label}}</span>
+  </div>
+  {{#each groups}}
+  <div class="dicevision-group">
+    <span class="dicevision-type">{{count}}{{type}}</span>
+    <span class="dicevision-values">
+      {{#each values}}
+      <span class="dicevision-value">{{this}}</span>
+      {{/each}}
+    </span>
+    {{#if (gt count 1)}}
+    <span class="dicevision-subtotal">({{subtotal}})</span>
+    {{/if}}
+  </div>
+  {{/each}}
+  <div class="dicevision-total">
+    <span>{{localize "DICEVISION.Chat.Total"}}:</span>
+    <span class="dicevision-total-value">{{total}}</span>
+  </div>
+</div>

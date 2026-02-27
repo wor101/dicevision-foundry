@@ -1,0 +1,73 @@
+/* DiceVision Module Styles */
+
+.dicevision-roll {
+  padding: 4px 0;
+}
+
+.dicevision-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--color-border-light-tertiary, #999);
+}
+
+.dicevision-label {
+  font-weight: bold;
+  font-size: 0.9em;
+  color: var(--color-text-dark-primary, #191813);
+}
+
+.dicevision-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+  font-size: 0.95em;
+}
+
+.dicevision-type {
+  font-weight: bold;
+  color: var(--color-text-dark-secondary, #4b4a44);
+  min-width: 36px;
+}
+
+.dicevision-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.dicevision-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  background: var(--color-bg-option, #f0f0e0);
+  border: 1px solid var(--color-border-light-tertiary, #999);
+  border-radius: 3px;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.dicevision-subtotal {
+  color: var(--color-text-dark-secondary, #4b4a44);
+  font-size: 0.85em;
+}
+
+.dicevision-total {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border-light-tertiary, #999);
+  font-weight: bold;
+}
+
+.dicevision-total-value {
+  font-size: 1.2em;
+  color: var(--color-text-hyperlink, #ff6400);
+}

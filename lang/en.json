@@ -1,0 +1,34 @@
+{
+  "DICEVISION.Settings.SessionCode.Name": "Session Code",
+  "DICEVISION.Settings.SessionCode.Hint": "6-character code from DiceVision Settings. Create one at dicevision.dirtyowlbear.com",
+
+  "DICEVISION.Settings.Mode.Name": "Operating Mode",
+  "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry.",
+  "DICEVISION.Settings.Mode.Off": "Off",
+  "DICEVISION.Settings.Mode.Chat": "Chat \u2014 Display rolls in chat",
+
+  "DICEVISION.Settings.AutoConnect.Name": "Auto-Connect",
+  "DICEVISION.Settings.AutoConnect.Hint": "Automatically connect to DiceVision when the world loads.",
+
+  "DICEVISION.Settings.ChatVisibility.Name": "Chat Visibility",
+  "DICEVISION.Settings.ChatVisibility.Hint": "Who can see DiceVision roll messages in chat.",
+  "DICEVISION.Settings.ChatVisibility.All": "Everyone",
+  "DICEVISION.Settings.ChatVisibility.GM": "GM Only",
+  "DICEVISION.Settings.ChatVisibility.Self": "Only Me",
+
+  "DICEVISION.Settings.RollLabel.Name": "Roll Label",
+  "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
+
+  "DICEVISION.Settings.Timeout.Name": "Roll Timeout (seconds)",
+  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll before falling back to virtual dice (Replace mode only).",
+
+  "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
+  "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
+  "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",
+  "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
+  "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
+  "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change to Chat in module settings to see rolls.",
+
+  "DICEVISION.Chat.Total": "Total",
+  "DICEVISION.Chat.RollReceived": "Roll received via DiceVision"
+}
