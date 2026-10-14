@@ -82,25 +82,28 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 
 ```javascript
 { "type": "connected", "session_code": "XKRM4N7B", "waiting": false, "waiting_apps": [] }
-{ "type": "roll", "session_code": "XKRM4N7B",
-  "data": { "dice": [{"type": "d20", "value": 15}], "total": 15, "roll_id": "uuid", "timestamp": "..." } }
+{ "type": "roll", "session_code": "XKRM4N7B", "timestamp": "...",
+  "data": { "dice": [{"type": "d20", "value": 15}], "total": 15, "roll_id": "uuid" } }
 { "type": "waiting", "session_code": "...", "app": "codex" }
 { "type": "cancelled", "session_code": "..." }
 { "type": "pong" }
 { "type": "error", "message": "..." }
 ```
 
-The server closes with code `4001` for an invalid session — don't reconnect on that.
+- `timestamp` is set by the bridge on the outer `roll` message. The dashboard's `data` has none, and `roll_id` may be missing.
+- **Treat the session as live only after `connected`.** Once dice-vision#407 is deployed, the server accepts the socket and *then* closes invalid sessions with `4001`, so `onopen` fires for bad codes too. Before #407, invalid sessions are rejected with HTTP 403, which browsers report as close code `1006`. Don't reconnect on `4001`.
 
 ### Messages Sent (Client → Server)
 
 ```javascript
 { "type": "waiting", "app_id": "foundry" }   // On connect + after each roll (chat mode), or for waitForResult()
-{ "type": "cancel", "app_id": "foundry" }    // Mode switched to off
+{ "type": "cancel", "app_id": "foundry" }    // Mode switched to off, or before disconnecting
 { "type": "ping" }                            // Keep-alive, every 30s
 ```
 
-**The dashboard only forwards a roll when some app is waiting**, and the bridge clears waiting after delivering each roll. Chat mode must therefore re-send `waiting` after every roll, as Talespire does.
+**The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`. Chat mode therefore re-sends `waiting` after every roll, as Talespire does, and each `waiting` re-arms the dashboard.
+
+**Send `cancel` before disconnecting.** The bridge registers every socket as app `"unknown"`, so its disconnect cleanup never removes `"foundry"` from `waiting_apps`. Without a `cancel`, the dashboard stays armed for an app that's gone. The backend fix is dice-vision#408.
 
 ## Development Workflow
 
@@ -135,7 +138,7 @@ game.modules.get("dicevision").api.connect("XKRM4N7B");
 
 - [ ] Module loads with no console errors (v12 and v13)
 - [ ] Connect with valid session code (with and without dash)
-- [ ] Connect with invalid session code → error notification, no reconnect loop
+- [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → rolls ignored; mode `chat` → rolls appear in chat
 - [ ] Chat visibility: Everyone / GM Only / Only Me
 - [ ] Changing session code in settings reconnects
