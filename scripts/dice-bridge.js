@@ -65,7 +65,9 @@ async function formatDiceForChat(rollData, label) {
   };
 
   const template = `modules/${MODULE_ID}/templates/chat-message.hbs`;
-  return renderTemplate(template, templateData);
+  // v13+ namespaces renderTemplate; the global is deprecated there
+  const render = foundry.applications?.handlebars?.renderTemplate ?? renderTemplate;
+  return render(template, templateData);
 }
 
 /**

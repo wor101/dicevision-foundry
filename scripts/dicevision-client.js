@@ -10,10 +10,12 @@
 import { displayRollInChat } from "./dice-bridge.js";
 
 const MODULE_ID = "dicevision";
+const APP_ID = "foundry";
 const WS_BASE_URL = "wss://dicevision.dirtyowlbear.com/api/bridge";
 const PING_INTERVAL_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAYS = [2000, 4000, 6000, 8000, 10000];
+const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 30000];
+const INVALID_SESSION_CLOSE_CODE = 4001;
 
 export class DiceVisionClient {
   constructor() {
@@ -30,27 +32,40 @@ export class DiceVisionClient {
   /** Listen for setting changes to auto-reconnect/disconnect. */
   _setupHooks() {
     Hooks.on("dicevision.sessionCodeChanged", (newCode) => {
-      if (this.connected) {
-        this.disconnect();
-      }
+      // disconnect() also cancels a pending reconnect to the old code
       if (newCode) {
         this.connect(newCode);
+      } else {
+        this.disconnect();
       }
     });
 
     Hooks.on("dicevision.modeChanged", (newMode) => {
       console.log(`[DiceVision] Mode changed to: ${newMode}`);
+      if (newMode === "chat") {
+        this.sendWaiting();
+      } else if (!this.rollCallbacks.length) {
+        this.sendCancel();
+      }
     });
   }
 
   /**
    * Connect to the DiceVision bridge WebSocket.
-   * @param {string} sessionCode - 6-character session code
+   * @param {string} sessionCode - 8-character session code (dash optional, e.g. "XKRM-4N7B")
    */
   connect(sessionCode) {
-    if (this.ws) {
-      this.disconnect();
-    }
+    this.disconnect();
+    this._openSocket(sessionCode);
+  }
+
+  /**
+   * Open a socket without resetting reconnect state, so automatic retries
+   * keep counting toward MAX_RECONNECT_ATTEMPTS.
+   * @param {string} sessionCode
+   */
+  _openSocket(sessionCode) {
+    this._closeSocket();
 
     const code = sessionCode.toUpperCase().replace(/-/g, "");
     this.sessionCode = code;
@@ -66,6 +81,10 @@ export class DiceVisionClient {
         this.connected = true;
         this.reconnectAttempts = 0;
         this._startPing();
+
+        if (this._shouldWait()) {
+          this.sendWaiting();
+        }
 
         ui.notifications.info(
           game.i18n.format("DICEVISION.Notifications.Connected", { code })
@@ -83,14 +102,16 @@ export class DiceVisionClient {
 
       this.ws.onclose = (event) => {
         console.log(`[DiceVision] Disconnected: ${event.code} ${event.reason}`);
+        this.ws = null;
         this.connected = false;
         this._stopPing();
 
-        if (event.code === 4001) {
+        if (event.code === INVALID_SESSION_CLOSE_CODE) {
           ui.notifications.error(
             game.i18n.localize("DICEVISION.Notifications.InvalidSession")
           );
           this.sessionCode = null;
+          this._cancelRollCallbacks();
           return;
         }
 
@@ -105,14 +126,27 @@ export class DiceVisionClient {
     }
   }
 
-  /** Disconnect and clean up all state. */
+  /** Disconnect, cancel any pending reconnect, and clean up all state. */
   disconnect() {
-    this._stopPing();
+    this._closeSocket();
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+
+    this.reconnectAttempts = 0;
+    this._cancelRollCallbacks();
+  }
+
+  /** @returns {boolean} Whether the client is currently connected. */
+  isConnected() {
+    return this.connected && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Close the current socket without triggering a reconnect. */
+  _closeSocket() {
+    this._stopPing();
 
     if (this.ws) {
       this.ws.onclose = null;
@@ -121,13 +155,14 @@ export class DiceVisionClient {
     }
 
     this.connected = false;
-    this.reconnectAttempts = 0;
-    this.rollCallbacks = [];
   }
 
-  /** @returns {boolean} Whether the client is currently connected. */
-  isConnected() {
-    return this.connected && this.ws?.readyState === WebSocket.OPEN;
+  /**
+   * The bridge only delivers a roll when some app is waiting, and clears the
+   * waiting state after each roll — so chat mode keeps a standing "waiting".
+   */
+  _shouldWait() {
+    return game.settings.get(MODULE_ID, "mode") === "chat" || this.rollCallbacks.length > 0;
   }
 
   /** Handle incoming WebSocket messages. */
@@ -163,7 +198,7 @@ export class DiceVisionClient {
 
   /**
    * Handle received roll data.
-   * @param {object} rollData - { dice, total, roll_id, timestamp, metadata }
+   * @param {object} rollData - { dice, total, roll_id }
    */
   _onRollReceived(rollData) {
     if (!rollData) return;
@@ -173,6 +208,11 @@ export class DiceVisionClient {
     // Resolve any pending waitForResult callbacks (Phase 2)
     this._resolveRollCallbacks(rollData);
 
+    // The bridge cleared waiting state when it delivered this roll
+    if (this._shouldWait()) {
+      this.sendWaiting();
+    }
+
     const mode = game.settings.get(MODULE_ID, "mode");
     if (mode === "off") {
       console.log("[DiceVision] Mode is off, ignoring roll");
@@ -180,25 +220,27 @@ export class DiceVisionClient {
     }
 
     if (mode === "chat") {
-      displayRollInChat(rollData);
+      displayRollInChat(rollData).catch((err) => {
+        console.error("[DiceVision] Failed to display roll:", err);
+      });
     }
   }
 
   /** Send "waiting" message to backend. */
   sendWaiting() {
-    this._send({ type: "waiting", app_id: "foundry" });
+    return this._send({ type: "waiting", app_id: APP_ID });
   }
 
   /** Send "cancel" message to backend. */
   sendCancel() {
-    this._send({ type: "cancel", app_id: "foundry" });
+    return this._send({ type: "cancel", app_id: APP_ID });
   }
 
   /**
    * Wait for a specific die result (Phase 2 — Dice Fulfillment API).
    * @param {string} denomination - Die type to match (e.g., "d20")
    * @param {number} [timeoutMs] - Timeout in milliseconds
-   * @returns {Promise<number|null>} The die value, or null on timeout
+   * @returns {Promise<number|null>} The die value, or null on timeout/disconnect
    */
   waitForResult(denomination, timeoutMs) {
     const timeout = timeoutMs || game.settings.get(MODULE_ID, "timeout") * 1000;
@@ -245,6 +287,15 @@ export class DiceVisionClient {
     }
   }
 
+  /** Resolve all pending waitForResult callbacks with null. */
+  _cancelRollCallbacks() {
+    for (const cb of this.rollCallbacks) {
+      clearTimeout(cb.timer);
+      cb.resolve(null);
+    }
+    this.rollCallbacks = [];
+  }
+
   /** Start keep-alive ping interval. */
   _startPing() {
     this._stopPing();
@@ -268,10 +319,11 @@ export class DiceVisionClient {
       ui.notifications.warn(
         game.i18n.localize("DICEVISION.Notifications.MaxReconnect")
       );
+      this._cancelRollCallbacks();
       return;
     }
 
-    const delay = RECONNECT_DELAYS[this.reconnectAttempts] || 10000;
+    const delay = RECONNECT_DELAYS[this.reconnectAttempts];
     this.reconnectAttempts++;
 
     console.log(
@@ -287,8 +339,9 @@ export class DiceVisionClient {
     );
 
     this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
       if (this.sessionCode) {
-        this.connect(this.sessionCode);
+        this._openSocket(this.sessionCode);
       }
     }, delay);
   }

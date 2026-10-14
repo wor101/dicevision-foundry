@@ -58,10 +58,6 @@ Hooks.once("ready", () => {
 /*  Cleanup                                           */
 /* -------------------------------------------------- */
 
-Hooks.on("closeWorld", () => {
-  diceVisionClient.disconnect();
-});
-
 window.addEventListener("beforeunload", () => {
   diceVisionClient.disconnect();
 });

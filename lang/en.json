@@ -1,6 +1,6 @@
 {
   "DICEVISION.Settings.SessionCode.Name": "Session Code",
-  "DICEVISION.Settings.SessionCode.Hint": "6-character code from DiceVision Settings. Create one at dicevision.dirtyowlbear.com",
+  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM-4N7B). Create one at dicevision.dirtyowlbear.com",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
   "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry.",
@@ -20,7 +20,7 @@
   "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
 
   "DICEVISION.Settings.Timeout.Name": "Roll Timeout (seconds)",
-  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll before falling back to virtual dice (Replace mode only).",
+  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll. Reserved for the planned Replace mode; not used in Chat mode.",
 
   "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
