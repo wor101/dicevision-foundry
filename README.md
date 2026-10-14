@@ -19,29 +19,31 @@ A Foundry VTT module that connects to [DiceVision](https://github.com/wor101/dic
 ## Setup
 
 1. Go to [dicevision.dirtyowlbear.com](https://dicevision.dirtyowlbear.com) and create a session in **Settings**
-2. Copy the 6-character session code (e.g., `ABC123`)
+2. Copy the 8-character session code (e.g., `XKRM-4N7B` — the dash is optional)
 3. In Foundry, go to **Settings** → **Module Settings** → **DiceVision**
 4. Paste the session code
 5. Set **Operating Mode** to **Chat**
 6. Roll physical dice in front of your camera — results appear in Foundry's chat log
 
+Each user who rolls physical dice needs their **own** session code. If two Foundry users enter the same code, every roll is posted to chat once per user.
+
 ## Settings
 
 | Setting | Description |
 |---------|-------------|
-| **Session Code** | 6-character code from DiceVision Settings |
+| **Session Code** | 8-character code from DiceVision Settings |
 | **Operating Mode** | `Off` (disabled) or `Chat` (display rolls in chat) |
 | **Auto-Connect** | Connect automatically when the world loads |
 | **Chat Visibility** | Who sees roll messages: Everyone, GM Only, or Only Me |
 | **Roll Label** | Label shown on roll messages (default: "DiceVision") |
-| **Roll Timeout** | Seconds to wait for a physical roll (used in future Replace mode) |
+| **Roll Timeout** | Seconds to wait for a physical roll (reserved for the planned Replace mode) |
 
 ## How It Works
 
 1. DiceVision's camera detects physical dice using a YOLO + CNN/Embedding AI pipeline
 2. Results are sent to the DiceVision backend
-3. The backend broadcasts results via WebSocket to all connected clients
-4. This Foundry module receives the results and creates chat messages
+3. In Chat mode, this module tells the backend it is waiting for rolls; DiceVision only forwards a roll when an app is waiting
+4. The backend sends the roll over WebSocket, and the module posts it to chat and registers as waiting again
 
 ## API
 
@@ -50,7 +52,7 @@ The module exposes a public API for macros and console use:
 ```javascript
 const api = game.modules.get("dicevision").api;
 
-api.connect("ABC123");  // Connect to a session
+api.connect("XKRM-4N7B");  // Connect to a session
 api.disconnect();       // Disconnect
 api.isConnected();      // Check connection status
 ```

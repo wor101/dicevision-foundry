@@ -9,7 +9,7 @@ const MODULE_ID = "dicevision";
 
 /**
  * Display a DiceVision roll result in Foundry's chat.
- * @param {object} rollData - { dice, total, roll_id, timestamp, metadata }
+ * @param {object} rollData - { dice, total, roll_id?, timestamp? }
  */
 export async function displayRollInChat(rollData) {
   const label = game.settings.get(MODULE_ID, "rollLabel");
@@ -65,7 +65,9 @@ async function formatDiceForChat(rollData, label) {
   };
 
   const template = `modules/${MODULE_ID}/templates/chat-message.hbs`;
-  return renderTemplate(template, templateData);
+  // v13+ namespaces renderTemplate; the global is deprecated there
+  const render = foundry.applications?.handlebars?.renderTemplate ?? renderTemplate;
+  return render(template, templateData);
 }
 
 /**

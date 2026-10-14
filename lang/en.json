@@ -1,6 +1,6 @@
 {
   "DICEVISION.Settings.SessionCode.Name": "Session Code",
-  "DICEVISION.Settings.SessionCode.Hint": "6-character code from DiceVision Settings. Create one at dicevision.dirtyowlbear.com",
+  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM-4N7B). Create one at dicevision.dirtyowlbear.com",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
   "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry.",
@@ -20,13 +20,14 @@
   "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
 
   "DICEVISION.Settings.Timeout.Name": "Roll Timeout (seconds)",
-  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll before falling back to virtual dice (Replace mode only).",
+  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll. Reserved for the planned Replace mode; not used in Chat mode.",
 
   "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
   "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",
   "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
   "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
+  "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
   "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change to Chat in module settings to see rolls.",
 
   "DICEVISION.Chat.Total": "Total",
