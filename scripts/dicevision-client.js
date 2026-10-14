@@ -4,7 +4,7 @@
  * Singleton that manages the WebSocket connection to the DiceVision
  * backend bridge at wss://dicevision.dirtyowlbear.com/api/bridge/{code}.
  *
- * Protocol reference: backend/app/routers/bridge.py
+ * Protocol reference: backend/app/routers/bridge.py in wor101/dice-vision
  */
 
 import { displayRollInChat } from "./dice-bridge.js";
@@ -76,27 +76,25 @@ export class DiceVisionClient {
     try {
       this.ws = new WebSocket(url);
 
+      // The server accepts invalid sessions before closing them with 4001, so
+      // the session only counts as live once it sends "connected".
       this.ws.onopen = () => {
-        console.log("[DiceVision] Connected");
-        this.connected = true;
-        this.reconnectAttempts = 0;
+        console.log("[DiceVision] Socket open, waiting for session confirmation");
         this._startPing();
-
-        if (this._shouldWait()) {
-          this.sendWaiting();
-        }
-
-        ui.notifications.info(
-          game.i18n.format("DICEVISION.Notifications.Connected", { code })
-        );
       };
 
       this.ws.onmessage = (event) => {
+        let message;
         try {
-          const message = JSON.parse(event.data);
-          this._onMessage(message);
+          message = JSON.parse(event.data);
         } catch (err) {
           console.error("[DiceVision] Failed to parse message:", err);
+          return;
+        }
+        try {
+          this._onMessage(message);
+        } catch (err) {
+          console.error(`[DiceVision] Failed to handle "${message.type}" message:`, err);
         }
       };
 
@@ -128,6 +126,11 @@ export class DiceVisionClient {
 
   /** Disconnect, cancel any pending reconnect, and clean up all state. */
   disconnect() {
+    // Older backends don't drop an app's waiting registration when its socket
+    // closes, which would leave the dashboard armed for an app that's gone.
+    if (this.isConnected()) {
+      this.sendCancel();
+    }
     this._closeSocket();
 
     if (this.reconnectTimeout) {
@@ -158,8 +161,9 @@ export class DiceVisionClient {
   }
 
   /**
-   * The bridge only delivers a roll when some app is waiting, and clears the
-   * waiting state after each roll — so chat mode keeps a standing "waiting".
+   * The DiceVision dashboard forwards a roll only while it believes an app is
+   * waiting, and drops that flag after each roll it sends. Chat mode re-sends
+   * "waiting" to re-arm it.
    */
   _shouldWait() {
     return game.settings.get(MODULE_ID, "mode") === "chat" || this.rollCallbacks.length > 0;
@@ -169,11 +173,12 @@ export class DiceVisionClient {
   _onMessage(message) {
     switch (message.type) {
       case "connected":
-        console.log("[DiceVision] Session info:", message);
+        this._onSessionConfirmed(message);
         break;
 
       case "roll":
-        this._onRollReceived(message.data);
+        // The bridge stamps the outer message; the dashboard's roll data has no timestamp
+        this._onRollReceived(message.data && { timestamp: message.timestamp, ...message.data });
         break;
 
       case "waiting":
@@ -197,8 +202,26 @@ export class DiceVisionClient {
   }
 
   /**
+   * The server confirmed a valid session: reset retries and register as waiting.
+   * @param {object} message - { session_code, waiting, waiting_apps }
+   */
+  _onSessionConfirmed(message) {
+    console.log("[DiceVision] Session info:", message);
+    this.connected = true;
+    this.reconnectAttempts = 0;
+
+    if (this._shouldWait()) {
+      this.sendWaiting();
+    }
+
+    ui.notifications.info(
+      game.i18n.format("DICEVISION.Notifications.Connected", { code: this.sessionCode })
+    );
+  }
+
+  /**
    * Handle received roll data.
-   * @param {object} rollData - { dice, total, roll_id }
+   * @param {object} rollData - { dice, total, roll_id?, timestamp? }
    */
   _onRollReceived(rollData) {
     if (!rollData) return;
@@ -208,7 +231,7 @@ export class DiceVisionClient {
     // Resolve any pending waitForResult callbacks (Phase 2)
     this._resolveRollCallbacks(rollData);
 
-    // The bridge cleared waiting state when it delivered this roll
+    // The dashboard dropped its waiting flag when it sent this roll
     if (this._shouldWait()) {
       this.sendWaiting();
     }
@@ -222,6 +245,9 @@ export class DiceVisionClient {
     if (mode === "chat") {
       displayRollInChat(rollData).catch((err) => {
         console.error("[DiceVision] Failed to display roll:", err);
+        ui.notifications.error(
+          game.i18n.format("DICEVISION.Notifications.DisplayFailed", { error: err.message })
+        );
       });
     }
   }
@@ -240,7 +266,8 @@ export class DiceVisionClient {
    * Wait for a specific die result (Phase 2 — Dice Fulfillment API).
    * @param {string} denomination - Die type to match (e.g., "d20")
    * @param {number} [timeoutMs] - Timeout in milliseconds
-   * @returns {Promise<number|null>} The die value, or null on timeout/disconnect
+   * @returns {Promise<number|null>} The die value, or null on timeout, disconnect,
+   *   invalid session, or exhausted reconnects
    */
   waitForResult(denomination, timeoutMs) {
     const timeout = timeoutMs || game.settings.get(MODULE_ID, "timeout") * 1000;
@@ -312,7 +339,7 @@ export class DiceVisionClient {
     }
   }
 
-  /** Attempt reconnection with exponential backoff. */
+  /** Attempt reconnection with doubling backoff (2s → 30s cap), max 5 attempts. */
   _attemptReconnect() {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       console.log("[DiceVision] Max reconnection attempts reached");

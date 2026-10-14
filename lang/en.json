@@ -27,6 +27,7 @@
   "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",
   "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
   "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
+  "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
   "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change to Chat in module settings to see rolls.",
 
   "DICEVISION.Chat.Total": "Total",
