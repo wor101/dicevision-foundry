@@ -9,12 +9,18 @@ A Foundry VTT module that connects to [DiceVision](https://github.com/wor101/dic
 
 ## Installation
 
+> **Beta:** 0.x releases are early test builds and haven't been widely tested yet.
+
 1. In Foundry VTT, go to **Add-on Modules** → **Install Module**
 2. Paste the manifest URL:
    ```
    https://github.com/wor101/dicevision-foundry/releases/latest/download/module.json
    ```
 3. Click **Install**
+
+**The Forge:** in the Bazaar, choose **Install From Manifest** and paste the same URL.
+
+To install a specific pre-release, use its tag's URL instead, e.g. `https://github.com/wor101/dicevision-foundry/releases/download/v0.2.0-rc.1/module.json`.
 
 ## Setup
 

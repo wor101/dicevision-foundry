@@ -1,0 +1,44 @@
+# Builds and publishes a Foundry release when a version tag is pushed.
+#
+#   git tag v0.1.1 && git push origin v0.1.1
+#
+# Plain tags (v0.1.1) become normal releases: the manifest points at
+# releases/latest, so Foundry's "Update" button picks up new versions.
+# Hyphenated tags (v0.2.0-rc.1) become pre-releases, which releases/latest
+# skips, so their manifest is pinned to the tag (install it by that URL).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: node tests/client.test.mjs
+
+      - name: Stamp module.json with the tag's version and URLs
+        run: ./scripts-dev/stamp-manifest.sh "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY"
+
+      - name: Build module.zip
+        run: ./scripts-dev/build-zip.sh
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" module.json module.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes $prerelease
