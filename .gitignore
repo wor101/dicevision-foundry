@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Node (if we add build tools later)
+node_modules/
+
+# Distribution (release zips are built, not committed)
+*.zip
+dist/
