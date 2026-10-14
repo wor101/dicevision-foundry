@@ -65,6 +65,8 @@ dicevision-foundry/
 
 No build step — Foundry loads `scripts/module.js` directly as an ES module.
 
+Run the client tests with `node tests/client.test.mjs` (mocked Foundry globals, no install). Leave `tests/` out of release zips.
+
 ## WebSocket Protocol
 
 Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
@@ -93,10 +95,12 @@ The server closes with code `4001` for an invalid session — don't reconnect on
 ### Messages Sent (Client → Server)
 
 ```javascript
-{ "type": "waiting", "app_id": "foundry" }   // Phase 2: waiting for a roll
-{ "type": "cancel", "app_id": "foundry" }    // Phase 2: cancel waiting
+{ "type": "waiting", "app_id": "foundry" }   // On connect + after each roll (chat mode), or for waitForResult()
+{ "type": "cancel", "app_id": "foundry" }    // Mode switched to off
 { "type": "ping" }                            // Keep-alive, every 30s
 ```
+
+**The dashboard only forwards a roll when some app is waiting**, and the bridge clears waiting after delivering each roll. Chat mode must therefore re-send `waiting` after every roll, as Talespire does.
 
 ## Development Workflow
 
