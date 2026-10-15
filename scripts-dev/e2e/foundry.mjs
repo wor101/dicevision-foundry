@@ -1,11 +1,11 @@
 // Drive a local Foundry server with Playwright for end-to-end checks.
-// See CLAUDE.md "Local end-to-end testing" for the setup these expect.
+// See CLAUDE.md "Local End-to-End Testing" for the setup these expect.
 //
 // Env:
 //   FOUNDRY_URL             default http://localhost:30000
 //   FOUNDRY_WORLD           default dicevision-test
-//   FOUNDRY_ADMIN_USER      admin username (only needed to launch the world)
 //   FOUNDRY_ADMIN_PASSWORD  admin password (only needed to launch the world)
+//   FOUNDRY_ADMIN_USER      admin username, if the server has one (v14+)
 //   PLAYWRIGHT_MODULE       path to playwright's index.mjs if `playwright`
 //                           isn't resolvable from here
 
@@ -26,7 +26,7 @@ export async function ensureWorld(browser) {
     if (/\/(join|game)$/.test(page.url())) return;
     if (page.url().endsWith('/auth')) {
       const { FOUNDRY_ADMIN_USER: user, FOUNDRY_ADMIN_PASSWORD: password } = process.env;
-      if (!password) throw new Error('World not running: set FOUNDRY_ADMIN_USER and FOUNDRY_ADMIN_PASSWORD to launch it');
+      if (!password) throw new Error('World not running: set FOUNDRY_ADMIN_PASSWORD (and FOUNDRY_ADMIN_USER) to launch it');
       await page.fill('#auth-username', user ?? '');
       await page.fill('#auth-password', password);
       await page.press('#auth-password', 'Enter');
@@ -38,7 +38,12 @@ export async function ensureWorld(browser) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'launchWorld', world })
       });
-      return r.json();
+      const text = await r.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { error: `launchWorld returned HTTP ${r.status}, not JSON (admin login or license page?): ${text.slice(0, 120)}` };
+      }
     }, WORLD);
     if (result.error) throw new Error(result.error);
   } finally {

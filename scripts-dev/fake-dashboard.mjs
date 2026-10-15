@@ -10,12 +10,14 @@
 //   --max N       Stop after sending N rolls (default 1; 0 = unlimited)
 //   --delay MS    Wait before answering a request (default 500)
 //   --watch S     After the last roll, keep listening S seconds to see whether
-//                 the app asks again (default 3). Repeated requests are what
-//                 lock the real dashboard into continuous capture.
+//                 the app asks again (default 3). A request after the last
+//                 roll would keep the real dashboard in continuous capture.
 //   --url URL     Bridge base URL (default wss://dicevision.dirtyowlbear.com/api/bridge)
 //
 // Like the real dashboard, it only sends a roll while some app is waiting.
-// Prints one JSON line per event and exits non-zero on an invalid session.
+// Prints one JSON line per event. Exits 0 after a clean finish, 1 on an
+// invalid session (close code 4001, dice-vision#407+) or any other abnormal
+// close, and 2 on bad arguments.
 
 const args = process.argv.slice(2);
 const code = args.find(a => !a.startsWith('--') && !isOptionValue(a));
@@ -33,11 +35,22 @@ if (!code) {
   process.exit(2);
 }
 
+function usageError(message) {
+  console.error(`fake-dashboard: ${message}`);
+  process.exit(2);
+}
+
+function numberOpt(name, fallback) {
+  const value = Number(opt(name, fallback));
+  if (!Number.isFinite(value) || value < 0) usageError(`--${name} must be a non-negative number`);
+  return value;
+}
+
 const base = opt('url', 'wss://dicevision.dirtyowlbear.com/api/bridge');
 const diceSpec = opt('dice', '1d20');
-const maxRolls = Number(opt('max', '1'));
-const delayMs = Number(opt('delay', '500'));
-const watchS = Number(opt('watch', '3'));
+const maxRolls = numberOpt('max', '1');
+const delayMs = numberOpt('delay', '500');
+const watchS = numberOpt('watch', '3');
 
 const log = (event, extra = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), event, ...extra }));
 
@@ -55,7 +68,14 @@ function rollDice(spec) {
   return dice;
 }
 
+try {
+  rollDice(diceSpec); // fail on a bad spec now, not mid-test
+} catch (err) {
+  usageError(err.message);
+}
+
 const normalized = code.toUpperCase().replace(/-/g, '');
+let finished = false;
 const ws = new WebSocket(`${base}/${normalized}`);
 let waitingApps = new Set();
 let sent = 0;
@@ -85,6 +105,7 @@ function maybeRoll(reason) {
     if (maxRolls > 0 && sent >= maxRolls) {
       watchTimer = setTimeout(() => {
         log('done', { rolls: sent, requests_after_last_roll: requestsAfterLast });
+        finished = true;
         ws.close(1000);
       }, watchS * 1000);
     }
@@ -93,7 +114,13 @@ function maybeRoll(reason) {
 
 ws.onopen = () => log('open', { session: normalized });
 ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
+  let msg;
+  try {
+    msg = JSON.parse(event.data);
+  } catch {
+    log('bad_message', { data: String(event.data).slice(0, 200) });
+    return;
+  }
   switch (msg.type) {
     case 'connected':
       waitingApps = new Set(msg.waiting_apps ?? []);
@@ -119,8 +146,8 @@ ws.onmessage = (event) => {
 ws.onclose = (event) => {
   clearTimeout(watchTimer);
   log('closed', { code: event.code, reason: event.reason });
-  process.exit(event.code === 4001 ? 1 : 0);
+  process.exit(finished && event.code === 1000 ? 0 : 1);
 };
-ws.onerror = () => log('socket_error');
+ws.onerror = (event) => log('socket_error', { message: event.message ?? event.error?.message ?? null });
 
 setInterval(() => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: 'ping' })), 30000).unref();

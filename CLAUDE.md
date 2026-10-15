@@ -89,7 +89,7 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 { "type": "roll", "session_code": "XKRM4N7B", "timestamp": "...",
   "data": { "dice": [{"type": "d20", "value": 15}], "total": 15, "roll_id": "uuid" } }
 { "type": "waiting", "session_code": "...", "app": "codex" }
-{ "type": "cancelled", "session_code": "..." }
+{ "type": "cancelled", "session_code": "...", "app": "foundry" }   // broadcast to the whole session
 { "type": "pong" }
 { "type": "error", "message": "..." }
 ```
@@ -101,18 +101,21 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 
 ```javascript
 { "type": "waiting", "app_id": "foundry" }   // A roll is wanted: requestRoll(), continuous mode, or waitForResult()
-{ "type": "cancel", "app_id": "foundry" }    // No roll wanted any more — only if we sent "waiting"
+{ "type": "cancel", "app_id": "foundry" }    // No roll wanted any more (only if we sent "waiting")
 { "type": "ping" }                            // Keep-alive, every 30s
 ```
 
 **The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`.
 
 **While an app is waiting, the dashboard switches to continuous capture** (`bridgeTriggeredMode` in the dashboard's `useVTTIntegration`, on by default via its "Send automatically" toggle). So the module only registers when it actually wants a roll (`_shouldWait()`):
-- **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. After that roll is posted, the module sends `cancel` so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
+- **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. When that roll arrives, the module sends `cancel` (unless a `waitForResult()` is still pending) so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
 - **Continuous mode on:** re-sends `waiting` after every roll, which keeps the dashboard capturing.
 - Rolls nobody in Foundry asked for (another app on the same session was waiting) are ignored.
 
-**Only send `cancel` if we registered (`registered`).** The dashboard treats any `cancelled` broadcast as "nobody is waiting", whatever its `app`, so a stray cancel would clear Talespire's or Codex's request on a shared session. The same applies to the cancel sent before disconnecting, which older backends needed because their disconnect cleanup never removed `"foundry"` from `waiting_apps` (fixed in dice-vision#408).
+**Any `cancelled` clears the dashboard for every app.** The bridge's `cancel` removes only the sender's `app_id` from `waiting_apps`, but it broadcasts `cancelled` to the whole session, and the dashboard (`useBridgeConnection`) then treats nobody as waiting, whatever the message's `app`. So:
+- **Only send `cancel` if we registered (`registered`).** That avoids gratuitous cancels, but a needed one still clears Talespire's or Codex's request if they're waiting on the same session. For example, Talespire re-arms after a shared roll, then Foundry's release `cancel` arrives. The protocol has no per-app cancel, so this is a known limitation; give each app its own session code.
+- **On `cancelled`, re-register if we still want a roll** (`registered = false`, then `_syncWaiting()`). Otherwise another app's cancel, or another Foundry user's on a shared code (both use `app_id: "foundry"`), leaves us shown as waiting while the dashboard never forwards a roll. The echo of our own cancel is harmless, because we only cancel when we no longer want a roll.
+- **No `cancel` before disconnecting.** Since dice-vision#408, the bridge drops our registration when the socket closes, and only broadcasts `cancelled` if no other app is still waiting. An explicit cancel would always clear the dashboard.
 
 ## Development Workflow
 
@@ -149,7 +152,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 
 - **Foundry** (Node.js build, licensed): v14 needs Node 24. Start it with `--noupnp`, since UPnP is on by default and asks the router to expose the port. Symlink this repo to `<dataPath>/Data/modules/dicevision`, so edits apply on a page reload. A world can be created with `POST /create {action: "createWorld", id, title, system}` (admin session), then launched with `POST /setup {action: "launchWorld", world}`.
 - **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`) and stops after `--max N` rolls. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
-- **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world (users `Gamemaster` and `Player`, no passwords). It checks the dice button, continuous mode and `/dv` commands. `scripts-dev/e2e/foundry.mjs` documents its env vars; `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
+- **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world as `Gamemaster` (the world also has a `Player` user for manual two-user tests; neither has a password). It checks the dice button, continuous mode and `/dv` commands. `scripts-dev/e2e/foundry.mjs` documents its env vars; `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
 
 ## Testing Checklist
 

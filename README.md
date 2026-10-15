@@ -37,10 +37,10 @@ In Chat mode, two buttons appear above the chat message-mode buttons:
 
 | Button | What it does |
 |--------|--------------|
-| **Dice** | Asks DiceVision for your next physical roll. It pulses while waiting; click it again to cancel. |
+| **Dice** | Asks DiceVision for your next physical roll. It pulses while waiting; click it again to cancel. Disabled while continuous mode is on. |
 | **Repeat** | Turns **continuous mode** on or off. |
 
-By default the module asks for **one roll at a time**. While Foundry is waiting, the DiceVision dashboard switches to continuous capture; once the roll arrives it goes back to normal.
+By default the module asks for **one roll at a time**. While Foundry is waiting, the DiceVision dashboard switches to continuous capture (if its **Send automatically** option is on, the default); once the roll arrives it goes back to normal.
 
 With **continuous mode** on, every roll is posted to chat and the dashboard stays in continuous capture until you turn it off.
 
@@ -52,13 +52,13 @@ With **continuous mode** on, every roll is posted to chat and the dashboard stay
 | `/dv cancel` | Cancel a pending roll |
 | `/dv continuous [on\|off]` | Toggle continuous mode, or set it |
 | `/dv mode off\|chat` | Set the operating mode |
-| `/dv connect <code>` | Save a session code and connect |
+| `/dv connect <code>` | Save a session code and connect (or reconnect) |
 | `/dv disconnect` | Disconnect |
 | `/dv status` | Show connection and waiting status |
 
 Command replies are only visible to you.
 
-Each user who rolls physical dice needs their **own** session code. If two Foundry users enter the same code, every roll is posted to chat once per user.
+Each user who rolls physical dice needs their **own** session code. If two Foundry users share a code, a roll is posted once for each user who is waiting for it, and one user cancelling (or finishing) a roll request can cancel the other's.
 
 ## Settings
 

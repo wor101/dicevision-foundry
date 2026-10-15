@@ -8,6 +8,7 @@
 
 const MODULE_ID = "dicevision";
 const CONTROLS_CLASS = "dicevision-controls";
+const SESSION_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
 
 /**
  * @param {import("./dicevision-client.js").DiceVisionClient} client
@@ -15,8 +16,13 @@ const CONTROLS_CLASS = "dicevision-controls";
 export function registerChatControls(client) {
   Hooks.on("chatMessage", (_chatLog, message) => {
     if (!/^\/dv(\s|$)/i.test(message)) return;
-    handleCommand(client, message.trim().split(/\s+/).slice(1)).catch((err) => {
+    const args = message.trim().split(/\s+/).slice(1);
+    handleCommand(client, args).catch((err) => {
       console.error("[DiceVision] Command failed:", err);
+      ui.notifications.error(game.i18n.format("DICEVISION.Notifications.CommandFailed", {
+        command: `/dv ${args.join(" ")}`.trim(),
+        error: err.message
+      }));
     });
     return false;
   });
@@ -51,7 +57,12 @@ function renderControls(client) {
         else client.requestRoll();
       }),
       makeButton("continuous", "fa-repeat", () => {
-        game.settings.set(MODULE_ID, "continuous", !game.settings.get(MODULE_ID, "continuous"));
+        game.settings.set(MODULE_ID, "continuous", !game.settings.get(MODULE_ID, "continuous")).catch((err) => {
+          console.error("[DiceVision] Failed to toggle continuous mode:", err);
+          ui.notifications.error(game.i18n.format("DICEVISION.Notifications.CommandFailed", {
+            command: "continuous", error: err.message
+          }));
+        });
       })
     );
     host.prepend(controls);
@@ -102,38 +113,46 @@ async function handleCommand(client, [sub = "help", arg]) {
       break;
 
     case "cancel":
-      if (!client.cancelRequest()) reply("DICEVISION.Commands.NothingToCancel");
+      if (!client.cancelRequest()) await reply("DICEVISION.Commands.NothingToCancel");
       break;
 
     case "continuous": {
-      const current = game.settings.get(MODULE_ID, "continuous");
-      const next = arg ? arg.toLowerCase() === "on" : !current;
       if (arg && !["on", "off"].includes(arg.toLowerCase())) return reply("DICEVISION.Commands.Help");
+      const next = arg ? arg.toLowerCase() === "on" : !game.settings.get(MODULE_ID, "continuous");
       await game.settings.set(MODULE_ID, "continuous", next);
-      reply(next ? "DICEVISION.Controls.ContinuousOn" : "DICEVISION.Controls.ContinuousOff");
+      await reply(next ? "DICEVISION.Controls.ContinuousOn" : "DICEVISION.Controls.ContinuousOff");
       break;
     }
 
     case "mode":
       if (!["off", "chat"].includes(arg?.toLowerCase())) return reply("DICEVISION.Commands.Help");
       await game.settings.set(MODULE_ID, "mode", arg.toLowerCase());
-      reply("DICEVISION.Commands.ModeSet", { mode: arg.toLowerCase() });
+      await reply("DICEVISION.Commands.ModeSet", { mode: arg.toLowerCase() });
       break;
 
-    case "connect":
+    case "connect": {
       if (!arg) return reply("DICEVISION.Commands.Help");
-      // Saving the setting triggers the connection
-      await game.settings.set(MODULE_ID, "sessionCode", arg);
+      if (!SESSION_CODE_PATTERN.test(arg)) return reply("DICEVISION.Commands.InvalidCode", { code: arg });
+      const normalize = code => code.toUpperCase().replace(/-/g, "");
+      if (normalize(arg) === normalize(game.settings.get(MODULE_ID, "sessionCode"))) {
+        // Foundry skips onChange when a setting is saved unchanged
+        client.connect(arg);
+      } else {
+        // Saving a new code connects via the setting's onChange
+        await game.settings.set(MODULE_ID, "sessionCode", arg);
+      }
       break;
+    }
 
     case "disconnect":
+      if (!client.isConnected() && !client.reconnectTimeout) return reply("DICEVISION.Commands.AlreadyDisconnected");
       client.disconnect();
       ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.Disconnected"));
       break;
 
     case "status": {
       const s = client.getState();
-      reply("DICEVISION.Commands.Status", {
+      await reply("DICEVISION.Commands.Status", {
         connection: game.i18n.localize(s.connected ? "DICEVISION.Commands.Connected" : "DICEVISION.Commands.NotConnected"),
         session: s.sessionCode ?? "-",
         mode: s.mode,
@@ -144,13 +163,13 @@ async function handleCommand(client, [sub = "help", arg]) {
     }
 
     default:
-      reply("DICEVISION.Commands.Help");
+      await reply("DICEVISION.Commands.Help");
   }
 }
 
 /** Post a message only the current user can see. */
 function reply(key, data) {
-  ChatMessage.create({
+  return ChatMessage.create({
     content: data ? game.i18n.format(key, data) : game.i18n.localize(key),
     speaker: { alias: "DiceVision" },
     whisper: [game.user.id]

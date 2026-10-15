@@ -133,16 +133,20 @@ export class DiceVisionClient {
       };
     } catch (err) {
       console.error("[DiceVision] Failed to create WebSocket:", err);
+      ui.notifications.error(
+        game.i18n.format("DICEVISION.Notifications.ConnectFailed", { error: err.message })
+      );
+      this.ws = null;
+      this.sessionCode = null;
+      this._notifyState();
     }
   }
 
   /** Disconnect, cancel any pending reconnect, and clean up all state. */
   disconnect() {
-    // Older backends don't drop an app's waiting registration when its socket
-    // closes, which would leave the dashboard armed for an app that's gone.
-    if (this.registered && this.isConnected()) {
-      this.sendCancel();
-    }
+    // No "cancel" first: the bridge drops our waiting registration when the
+    // socket closes (dice-vision#408), and only tells the dashboard if no other
+    // app is still waiting. An explicit cancel would always clear it.
     this._closeSocket();
 
     if (this.reconnectTimeout) {
@@ -200,15 +204,16 @@ export class DiceVisionClient {
     if (this._shouldWait()) {
       this.sendWaiting();
     } else if (this.registered) {
-      // The dashboard treats any "cancelled" as nobody waiting, so only send
-      // one when we registered; otherwise we'd clear another app's request.
+      // The dashboard treats any "cancelled" as nobody waiting, whatever its
+      // app, so never send one we don't need. Even this one clears the request
+      // of another app on the session (see CLAUDE.md, WebSocket Protocol).
       this.sendCancel();
     }
   }
 
   /**
-   * Ask for the next physical roll to be posted to chat. In continuous mode
-   * every roll is posted already, so this is a no-op.
+   * Ask for the next physical roll to be posted to chat. A no-op (returning
+   * true) if a roll is already wanted: continuous mode or a pending request.
    * @returns {boolean} Whether a roll is now being waited for
    */
   requestRoll() {
@@ -223,7 +228,11 @@ export class DiceVisionClient {
     if (this._wantsChatRoll()) return true;
 
     this.pendingChatRoll = true;
-    this.sendWaiting();
+    if (!this.sendWaiting()) {
+      this.pendingChatRoll = false;
+      ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
+      return false;
+    }
     ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.WaitingForRoll"));
     this._notifyState();
     return true;
@@ -277,7 +286,12 @@ export class DiceVisionClient {
         break;
 
       case "cancelled":
-        console.log("[DiceVision] Waiting cancelled");
+        // Any app's cancel (or another Foundry user's on a shared code) clears
+        // the dashboard's waiting state and may have removed "foundry" from
+        // the bridge too. Re-register if we still want a roll.
+        console.log(`[DiceVision] Waiting cancelled (${message.app ?? "all apps"})`);
+        this.registered = false;
+        this._syncWaiting();
         break;
 
       case "pong":
@@ -293,7 +307,8 @@ export class DiceVisionClient {
   }
 
   /**
-   * The server confirmed a valid session: reset retries and register as waiting.
+   * The server confirmed a valid session: reset retries, and register as
+   * waiting if a roll is wanted (_shouldWait()).
    * @param {object} message - { session_code, waiting, waiting_apps }
    */
   _onSessionConfirmed(message) {
