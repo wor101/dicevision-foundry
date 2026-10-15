@@ -9,7 +9,7 @@
   "DICEVISION.Settings.Mode.Replace": "Replace \u2014 Use physical dice for Foundry rolls",
 
   "DICEVISION.Settings.Continuous.Name": "Continuous Mode",
-  "DICEVISION.Settings.Continuous.Hint": "Chat mode only. Post every physical roll to chat. Keeps the DiceVision dashboard capturing continuously. When off, use the dice button by the chat box (or /dv roll) to ask for one roll at a time.",
+  "DICEVISION.Settings.Continuous.Hint": "Chat and Replace mode. Post every physical roll to chat (in Replace mode, except rolls a Foundry roll dialog is waiting for). Keeps the DiceVision dashboard capturing continuously. When off, use the dice button by the chat box (or /dv roll) to ask for one roll at a time.",
 
   "DICEVISION.Settings.AutoConnect.Name": "Auto-Connect",
   "DICEVISION.Settings.AutoConnect.Hint": "Automatically connect to DiceVision when the world loads.",
@@ -30,7 +30,7 @@
   "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
   "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
   "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Use /dv mode replace (or module settings) to roll physical dice for Foundry's rolls, or /dv mode chat to post them to chat.",
-  "DICEVISION.Notifications.ReplaceMode": "DiceVision: in Replace mode, just roll in Foundry (e.g. /roll 1d20 or a character sheet). While DiceVision is connected, it waits for your physical dice.",
+  "DICEVISION.Notifications.NoDice": "DiceVision: no dice detected. Roll again in view of the camera.",
   "DICEVISION.Notifications.ApplyFailed": "DiceVision: couldn't enter the dice in the roll dialog ({error}). Roll again, or click Submit to roll digitally.",
   "DICEVISION.Notifications.RollIgnored": "DiceVision: no Foundry roll is waiting for dice, so this physical roll was ignored.",
   "DICEVISION.Notifications.NotConnected": "DiceVision: Not connected. Check your session code in module settings, or use /dv connect <code>.",
@@ -38,7 +38,7 @@
   "DICEVISION.Notifications.CommandFailed": "DiceVision: {command} failed ({error}). See the console for details.",
   "DICEVISION.Notifications.WaitingForRoll": "DiceVision: Waiting for physical dice...",
 
-  "DICEVISION.Controls.RequestRoll": "DiceVision: roll physical dice",
+  "DICEVISION.Controls.RequestRoll": "DiceVision: post your next physical roll to chat",
   "DICEVISION.Controls.CancelRequest": "DiceVision: waiting for dice (click to cancel)",
   "DICEVISION.Controls.ContinuousActive": "DiceVision: continuous mode is posting every roll",
   "DICEVISION.Controls.Disconnected": "DiceVision: not connected",

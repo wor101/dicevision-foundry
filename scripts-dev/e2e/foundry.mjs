@@ -70,6 +70,18 @@ export async function joinAs(browser, user = 'Gamemaster', password = '') {
   return page;
 }
 
+/**
+ * Type a line into the chat box and press Enter, as a user would. v14's
+ * input is a ProseMirror editor, so hooks see HTML ("<p>/dv roll</p>"),
+ * unlike ui.chat.processMessage("/dv roll").
+ */
+export async function typeChat(page, line) {
+  const input = (await page.$('#chat-message [contenteditable]')) ?? (await page.$('#chat-message'));
+  await input.click();
+  await page.keyboard.type(line);
+  await page.keyboard.press('Enter');
+}
+
 export function errors(page) {
   return page.logs.filter(l => /^\[(error|pageerror)\]/.test(l));
 }

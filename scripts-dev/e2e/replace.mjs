@@ -11,7 +11,7 @@
 // Use a session code nobody is rolling real dice on, and keep the real
 // dashboard closed on it.
 
-import { launchBrowser, ensureWorld, joinAs, errors } from './foundry.mjs';
+import { launchBrowser, ensureWorld, joinAs, errors, typeChat } from './foundry.mjs';
 import { startDashboard, killDashboards } from './dashboard.mjs';
 
 const code = process.argv[2];
@@ -89,6 +89,19 @@ try {
   await dash.exited();
   check(roll.total === 9, `the right die fills it afterwards (${roll.total})`);
 
+  // No dice detected: the dialog says so and keeps waiting (needs the
+  // dice-vision#415 bridge, which relays no_dice)
+  dash = dashboard(['--max', '1', '--dice', 'd20=11', '--no-dice', '1', '--delay', '1500', '--watch', '2']);
+  await dash.until('connected');
+  await chatCommand('/roll 1d20');
+  await resolverOpen();
+  const noDice = await page.waitForSelector('.dicevision-status-notice', { timeout: 10000 })
+    .then(h => h.textContent()).catch(() => null);
+  check(/no dice detected/i.test(noDice ?? ''), `no dice: notice in the dialog ("${noDice}")`);
+  roll = await nextRoll();
+  await dash.exited();
+  check(roll.total === 11, `no dice: the next roll still fills it (${roll.total})`);
+
   // Exploding dice ask for another die; Submit is disabled by then, so the
   // status points at the die's own arrow
   dash = dashboard(['--max', '2', '--dice', 'd6=6;d6=2', '--delay', '1500', '--watch', '3']);
@@ -160,7 +173,7 @@ try {
   dash.kill();
 
   // Disconnected: rolls are digital, no dialog
-  await page.evaluate(() => ui.chat.processMessage('/dv disconnect'));
+  await typeChat(page, '/dv disconnect');
   await page.waitForTimeout(500);
   await chatCommand('/roll 1d20');
   roll = await nextRoll();

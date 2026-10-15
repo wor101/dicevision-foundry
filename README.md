@@ -38,6 +38,7 @@ Every Foundry roll waits for your physical dice while DiceVision is connected. T
 - **Roll all the dice at once, in any order.** They're matched by type, so for `2d20kh + 1d6` roll two d20s and a d6 together.
 - **Missing dice:** the dialog fills what it can and waits for the rest. You can roll the missing dice separately.
 - **Wrong or extra dice** are ignored, with a warning in the dialog. Roll again.
+- **No dice detected:** the dialog says so and keeps waiting. Roll again in view of the camera.
 - **Percentile:** roll two d10s (a tens die and a units die) for a d100. 00 + 0 is 100. A d10 showing 0 counts as 10.
 - **Exploding dice and rerolls** ask for another die.
 - **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally. For an extra die from an explosion or reroll, click the arrow next to it.
@@ -49,7 +50,7 @@ To use physical dice only for some die types (say, d20s), set Operating Mode to 
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons appear above the chat message-mode buttons:
+Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons appear above the chat message-mode buttons, in Chat and Replace mode (in Replace mode, a Foundry roll waiting for dice takes the roll first):
 
 | Button | What it does |
 |--------|--------------|

@@ -47,7 +47,7 @@ export class DiceVisionClient {
 
     Hooks.on("dicevision.modeChanged", (newMode) => {
       console.log(`[DiceVision] Mode changed to: ${newMode}`);
-      if (newMode !== "chat") this.pendingChatRoll = false;
+      if (newMode === "off") this.pendingChatRoll = false;
       this._syncWaiting();
       this._notifyState();
     });
@@ -180,11 +180,12 @@ export class DiceVisionClient {
   }
 
   /**
-   * Whether chat mode wants the next roll: always in continuous mode,
-   * otherwise only after requestRoll().
+   * Whether the next roll should be posted to chat (Chat and Replace mode):
+   * always in continuous mode, otherwise only after requestRoll(). In
+   * Replace mode, a roll dialog waiting for dice takes the roll first.
    */
   _wantsChatRoll() {
-    if (game.settings.get(MODULE_ID, "mode") !== "chat") return false;
+    if (game.settings.get(MODULE_ID, "mode") === "off") return false;
     return this.pendingChatRoll || game.settings.get(MODULE_ID, "continuous");
   }
 
@@ -204,10 +205,11 @@ export class DiceVisionClient {
 
   /**
    * Register a roll consumer: an object with wantsRoll() (whether it needs
-   * dice right now) and consume(rollData). While any consumer wants a roll,
+   * dice right now), consume(rollData), and optionally noDice() (the camera
+   * saw no dice; the dashboard keeps capturing). While any consumer wants a roll,
    * rolls go to it instead of chat. Call sync() whenever wantsRoll() may
    * have changed.
-   * @param {{wantsRoll: () => boolean, consume: (rollData: object) => void}} consumer
+   * @param {{wantsRoll: () => boolean, consume: (rollData: object) => void, noDice?: () => void}} consumer
    * @returns {() => void} Unregisters the consumer
    */
   addRollConsumer(consumer) {
@@ -246,13 +248,7 @@ export class DiceVisionClient {
    * @returns {boolean} Whether a roll is now being waited for
    */
   requestRoll() {
-    const mode = game.settings.get(MODULE_ID, "mode");
-    if (mode === "replace") {
-      if (this.isConnected()) ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.ReplaceMode"));
-      else ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
-      return false;
-    }
-    if (mode !== "chat") {
+    if (game.settings.get(MODULE_ID, "mode") === "off") {
       ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ModeOff"));
       return false;
     }
@@ -320,6 +316,10 @@ export class DiceVisionClient {
 
       case "waiting":
         console.log(`[DiceVision] ${message.app || "App"} is waiting for roll`);
+        break;
+
+      case "no_dice":
+        this._onNoDice();
         break;
 
       case "cancelled":
@@ -404,7 +404,7 @@ export class DiceVisionClient {
       if (!consumer) {
         console.log("[DiceVision] No roll requested, ignoring roll");
         // We asked for it, but the roll dialog was closed or filled meanwhile
-        if (wasRegistered && game.settings.get(MODULE_ID, "mode") === "replace") {
+        if (wasRegistered) {
           ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.RollIgnored"));
         }
       }
@@ -417,6 +417,23 @@ export class DiceVisionClient {
         game.i18n.format("DICEVISION.Notifications.DisplayFailed", { error: err.message })
       );
     });
+  }
+
+  /**
+   * The dashboard looked for a roll but found no dice. It keeps capturing,
+   * so we stay registered; just tell the user if they're waiting.
+   */
+  _onNoDice() {
+    if (!this.registered) return; // another app (or nobody here) asked
+    const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
+    try {
+      consumer?.noDice?.();
+    } catch (err) {
+      console.error("[DiceVision] Failed to show no-dice notice:", err);
+    }
+    if (consumer || this._wantsChatRoll()) {
+      ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NoDice"));
+    }
   }
 
   /** Send "waiting" message to backend. */

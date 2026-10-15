@@ -81,6 +81,11 @@ export function registerRollIntercept(client) {
       } finally {
         refresh();
       }
+    },
+    noDice: () => {
+      const notice = game.i18n.localize("DICEVISION.Notifications.NoDice");
+      for (const app of new Set(openSlots(resolvers).map(s => s.app))) notices.set(app, notice);
+      refresh();
     }
   });
 

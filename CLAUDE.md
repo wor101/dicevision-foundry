@@ -24,7 +24,7 @@ The module:
 |------|-------------|
 | Off | Nothing posted to chat; only dice set to DiceVision in Core › Dice Configuration are filled |
 | Chat | Physical rolls appear as chat messages (dice button / `/dv roll`, or continuous mode) |
-| Replace | Foundry's own rolls (`/roll`, system rolls like dnd5e attacks) wait for physical dice |
+| Replace | Foundry's own rolls (`/roll`, system rolls like dnd5e attacks) wait for physical dice. The dice button and continuous mode still post other rolls to chat; a waiting roll dialog takes a roll first |
 
 ### Replace mode (`roll-intercept.js`, `dice-matching.js`)
 
@@ -73,7 +73,7 @@ dicevision-foundry/
 │   ├── roll-intercept.js     # Replace mode: fulfillment method + RollResolver integration
 │   ├── dice-matching.js      # Pure: physical dice → open roll slots
 │   ├── dice-bridge.js        # Roll data → ChatMessage
-│   ├── chat-controls.js      # Chat sidebar buttons + /dv commands
+│   ├── chat-controls.js      # Chat sidebar buttons + /dv commands (v14 passes the hook HTML: plainText())
 │   └── settings.js           # game.settings registration (all client-scoped)
 ├── templates/
 │   └── chat-message.hbs      # Chat card template
@@ -111,6 +111,7 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
   "data": { "dice": [{"type": "d20", "value": 15}], "total": 15, "roll_id": "uuid" } }
 { "type": "waiting", "session_code": "...", "app": "codex" }
 { "type": "cancelled", "session_code": "...", "app": "foundry" }   // broadcast to the whole session
+{ "type": "no_dice", "session_code": "..." }   // dice-vision#415+: dashboard saw no dice; waiting unchanged
 { "type": "pong" }
 { "type": "error", "message": "..." }
 ```
@@ -133,6 +134,7 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 - **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. When that roll arrives, the module sends `cancel` (unless a roll dialog still wants dice) so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
 - **Continuous mode on:** re-sends `waiting` after every roll, which keeps the dashboard capturing.
 - Rolls nobody in Foundry asked for (another app on the same session was waiting) are ignored.
+- `no_dice` (the dashboard found no dice while an app waits) only shows a toast, and a notice in a waiting roll dialog, if we're `registered`. Nothing is sent back: the dashboard keeps capturing.
 
 **Any `cancelled` clears the dashboard for every app.** The bridge's `cancel` removes only the sender's `app_id` from `waiting_apps`, but it broadcasts `cancelled` to the whole session, and the dashboard (`useBridgeConnection`) then treats nobody as waiting, whatever the message's `app`. So:
 - **Only send `cancel` if we registered (`registered`).** That avoids gratuitous cancels, but a needed one still clears Talespire's or Codex's request if they're waiting on the same session. For example, Talespire re-arms after a shared roll, then Foundry's release `cancel` arrives. The protocol has no per-app cancel, so this is a known limitation; give each app its own session code.
@@ -186,6 +188,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Connect with valid session code (with and without dash)
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → rolls ignored; mode `chat` → rolls appear in chat
+- [ ] `/dv` commands typed into the chat box (v14: rich-text editor)
 - [ ] Replace: `/roll 2d20kh+1d6+3` opens the dialog, fills from one physical roll, posts the right total, then `cancel`
 - [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally (the arrow, for explode/reroll dice)
 - [ ] Replace: dnd5e attack, damage and save rolls from a character sheet

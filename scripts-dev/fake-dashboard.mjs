@@ -12,6 +12,8 @@
 //                 "d20=12;d6=2" sends a d20 of 12, then a d6 of 2.
 //   --max N       Stop after sending N rolls (default 1; 0 = unlimited)
 //   --delay MS    Wait before answering a request (default 500)
+//   --no-dice N   First answer N times with "no_dice" (recognition found
+//                 nothing), as the real dashboard does while an app waits
 //   --watch S     After the last roll, keep listening S seconds to see whether
 //                 the app asks again (default 3). A request after the last
 //                 roll would keep the real dashboard in continuous capture.
@@ -54,6 +56,7 @@ const diceSpec = opt('dice', '1d20');
 const maxRolls = numberOpt('max', '1');
 const delayMs = numberOpt('delay', '500');
 const watchS = numberOpt('watch', '3');
+let noDiceLeft = numberOpt('no-dice', '0');
 
 const log = (event, extra = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), event, ...extra }));
 
@@ -99,6 +102,14 @@ function maybeRoll(reason) {
   pending = setTimeout(() => {
     pending = null;
     if (waitingApps.size === 0) return;
+    if (noDiceLeft > 0) {
+      // Waiting state is unchanged by no_dice: keep "capturing"
+      noDiceLeft--;
+      ws.send(JSON.stringify({ type: 'no_dice' }));
+      log('no_dice_sent', { to: [...waitingApps] });
+      maybeRoll('still waiting');
+      return;
+    }
     const dice = rollDice(rollSpecs[Math.min(sent, rollSpecs.length - 1)]);
     const total = dice.reduce((s, d) => s + d.value, 0);
     const roll_id = crypto.randomUUID();
@@ -144,7 +155,8 @@ ws.onmessage = (event) => {
       log('cancelled');
       break;
     case 'roll':
-      break; // our own roll echoed back to session members
+    case 'no_dice':
+      break; // our own messages echoed back to session members
     default:
       log(msg.type, msg);
   }

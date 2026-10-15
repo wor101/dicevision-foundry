@@ -1,9 +1,10 @@
 /**
  * Chat sidebar controls and /dv chat commands.
  *
- * In Chat mode two buttons sit with the chat message-mode buttons:
- * - Dice: request the next physical roll (click again to cancel)
+ * In Chat and Replace mode two buttons sit with the chat message-mode buttons:
+ * - Dice: post the next physical roll to chat (click again to cancel)
  * - Repeat: toggle continuous mode (post every roll)
+ * In Replace mode, a Foundry roll dialog waiting for dice takes rolls first.
  */
 
 const MODULE_ID = "dicevision";
@@ -15,8 +16,9 @@ const SESSION_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
  */
 export function registerChatControls(client) {
   Hooks.on("chatMessage", (_chatLog, message) => {
-    if (!/^\/dv(\s|$)/i.test(message)) return;
-    const args = message.trim().split(/\s+/).slice(1);
+    const text = plainText(message);
+    if (!/^\/dv(\s|$)/i.test(text)) return;
+    const args = text.split(/\s+/).slice(1);
     handleCommand(client, args).catch((err) => {
       console.error("[DiceVision] Command failed:", err);
       ui.notifications.error(game.i18n.format("DICEVISION.Notifications.CommandFailed", {
@@ -34,6 +36,20 @@ export function registerChatControls(client) {
 }
 
 /**
+ * The chat box's text. v14's chat input is a rich-text editor, so the
+ * chatMessage hook gets HTML such as "<p>/dv status</p>".
+ * @param {string} message
+ */
+export function plainText(message) {
+  const entities = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
+  return String(message)
+    .replace(/<br\b[^>]*>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, entity => entities[entity])
+    .trim();
+}
+
+/**
  * Add, update, or remove the DiceVision buttons in #chat-controls.
  * @param {import("./dicevision-client.js").DiceVisionClient} client
  */
@@ -43,7 +59,7 @@ function renderControls(client) {
 
   const state = client.getState();
   let controls = host.querySelector(`.${CONTROLS_CLASS}`);
-  if (state.mode !== "chat") {
+  if (state.mode === "off") {
     controls?.remove();
     return;
   }

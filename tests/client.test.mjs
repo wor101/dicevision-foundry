@@ -131,7 +131,8 @@ function reset() {
 
 reset();
 const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
-const { registerChatControls } = await import("../scripts/chat-controls.js");
+const chatControls = await import("../scripts/chat-controls.js");
+const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
 
 // ---------------------------------------------------------------------------
@@ -647,13 +648,35 @@ await test("a roll consumer survives a reconnect and re-registers", (c) => {
   check(next.sentTypes().includes("waiting"), "waiting re-sent on the new socket");
 });
 
-await test("/dv roll in Replace mode explains rolling in Foundry instead", (c) => {
+await test("Replace mode: /dv roll posts the next roll to chat", async (c) => {
   settings.mode = "replace";
   const ws = connectOneShot(c);
-  check(c.requestRoll() === false, "requestRoll refused");
-  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.ReplaceMode", `toasts ${JSON.stringify(toasts)}`);
-  check(!ws.sentTypes().includes("waiting"), "no waiting sent");
+  check(c.requestRoll() === true, "accepted");
+  check(ws.sentTypes().at(-1) === "waiting", "waiting sent");
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1, "posted to chat");
+  check(ws.sentTypes().at(-1) === "cancel", "released");
 });
+
+await test("no_dice while waiting warns and keeps waiting", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  const count = ws.sent.length;
+  toasts = [];
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(toasts.at(-1)?.[0] === "warn" && toasts.at(-1)[1] === "DICEVISION.Notifications.NoDice", `toasts ${JSON.stringify(toasts)}`);
+  check(ws.sent.length === count, "nothing sent: the dashboard keeps capturing");
+  check(c.getState().waiting, "still waiting");
+});
+
+await test("no_dice when we didn't ask is ignored", (c) => {
+  const ws = connectOneShot(c);
+  toasts = [];
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(toasts.length === 0, `toasts ${JSON.stringify(toasts)}`);
+});
+
 
 await test("never-registered client sends no cancel on mode or continuous changes", async (c) => {
   const ws = connectOneShot(c);
@@ -738,6 +761,25 @@ await test("a WebSocket that can't be created shows an error", (c) => {
 function chatLine(message) {
   return hooks.chatMessage.map(fn => fn({}, message, {})).find(r => r !== undefined);
 }
+
+await test("plainText unwraps v14's rich-text chat input", () => {
+  const { plainText } = chatControls;
+  check(plainText("<p>/dv status</p>") === "/dv status", plainText("<p>/dv status</p>"));
+  check(plainText("<p>/dv&nbsp;connect XKRM-4N7B</p>") === "/dv connect XKRM-4N7B", "nbsp");
+  check(plainText("/dv roll") === "/dv roll", "plain text unchanged (v12/v13 textarea)");
+  check(plainText("<p><strong>/dv</strong> mode chat</p>") === "/dv mode chat", "inline formatting");
+});
+
+await test("/dv commands typed in v14's chat editor (HTML) are handled", async (c) => {
+  registerChatControls(c);
+  const ws = connectOneShot(c);
+  check(chatLine("<p>/dv roll</p>") === false, "message stopped");
+  check(ws.sentTypes().at(-1) === "waiting", "roll requested");
+  chatLine("<p>/dv&nbsp;mode replace</p>");
+  await flush();
+  check(settings.mode === "replace", `mode ${settings.mode}`);
+  check(chatLine("<p>/dvx</p>") === undefined, "other commands untouched");
+});
 
 await test("/dv roll requests a roll and stops the message reaching chat", (c) => {
   registerChatControls(c);
@@ -939,10 +981,12 @@ async function controlsTest(name, fn) {
   });
 }
 
-await controlsTest("buttons appear in chat mode and go away in mode off", async (c) => {
+await controlsTest("buttons appear in chat and replace mode and go away in mode off", async (c) => {
   const button = withChatControls(c);
   connectOneShot(c);
   check(button("request") && button("continuous"), "both buttons rendered");
+  await game.settings.set("dicevision", "mode", "replace");
+  check(button("request") && button("continuous"), "still there in replace mode");
   await game.settings.set("dicevision", "mode", "off");
   check(!button("request"), "removed in mode off");
 });
@@ -1477,6 +1521,31 @@ await interceptTest("/dv roll in Replace mode while disconnected says not connec
   settings.mode = "replace";
   check(c.requestRoll() === false, "refused");
   check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.NotConnected", `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("no_dice shows a notice in the waiting dialog and a toast", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  const count = ws.sent.length;
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(app.notice() === "DICEVISION.Notifications.NoDice", `notice ${app.notice()}`);
+  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.NoDice", `toasts ${JSON.stringify(toasts)}`);
+  check(ws.sent.length === count, "no re-send: the dashboard keeps capturing");
+});
+
+await interceptTest("Replace mode: a dialog takes the roll before a pending chat request", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  const app = fakeResolver(["d20"]);
+  open(app);
+  ws.recv(rollOf(["d20", 12]));
+  await flush();
+  check(app.values()[0] === "12" && chat.length === 0, "dialog first");
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1, "then the chat request");
 });
 
 await interceptTest("the dialog says when DiceVision isn't connected", (c) => {

@@ -7,7 +7,7 @@
 // Use a session code nobody is rolling real dice on, and keep the real
 // dashboard closed on it.
 
-import { launchBrowser, ensureWorld, joinAs, errors } from './foundry.mjs';
+import { launchBrowser, ensureWorld, joinAs, errors, typeChat } from './foundry.mjs';
 import { startDashboard, killDashboards } from './dashboard.mjs';
 
 const code = process.argv[2];
@@ -56,12 +56,12 @@ try {
   check((await newMessages()) === 3, 'continuous on: both rolls posted');
   check(dash.done()?.requests_after_last_roll === 1, 'continuous on: re-armed after the last roll');
 
-  // Chat commands
+  // Chat commands, typed into the chat box (v14 passes hooks HTML)
   dash = dashboard(['--max', '1', '--dice', '1d8', '--watch', '3']);
   await dash.until('connected');
   for (const line of ['/dv continuous off', '/dv roll']) {
-    await page.evaluate(line => ui.chat.processMessage(line), line);
-    await page.waitForTimeout(300);
+    await typeChat(page, line);
+    await page.waitForTimeout(500);
   }
   await dash.exited();
   check(dash.count('roll_sent') === 1 && dash.done()?.requests_after_last_roll === 0, '/dv roll: one roll, no request after it');
