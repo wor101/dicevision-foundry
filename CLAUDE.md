@@ -4,7 +4,7 @@
 
 This repository contains a Foundry VTT module that connects to DiceVision's WebSocket bridge. It either fills Foundry's own dice rolls with physical dice (Replace mode) or posts physical rolls to chat (Chat mode).
 
-**Status:** Chat mode is released (v0.1.1) and tested on The Forge. Replace mode works on Foundry v14 with dnd5e 6 (tested locally against the live bridge; see Local End-to-End Testing). The module was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
+**Status:** Chat mode is released (v0.1.1) and tested on The Forge. Replace mode works on Foundry v14 with dnd5e 6 for `/roll` and dnd5e's `D20Roll` with advantage (tested locally against the live bridge; see Local End-to-End Testing). Rolls from a character sheet are not verified yet. The module was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
 
 ## Architecture
 
@@ -22,20 +22,28 @@ The module:
 
 | Mode | Description |
 |------|-------------|
-| Off | Nothing intercepted or posted |
+| Off | Nothing posted to chat; only dice set to DiceVision in Core › Dice Configuration are filled |
 | Chat | Physical rolls appear as chat messages (dice button / `/dv roll`, or continuous mode) |
 | Replace | Foundry's own rolls (`/roll`, system rolls like dnd5e attacks) wait for physical dice |
 
 ### Replace mode (`roll-intercept.js`, `dice-matching.js`)
 
 Built on Foundry's dice fulfillment API (v12+), not a `/roll` patch, so it covers every `Roll.evaluate()`. Modeled on the Codex mod's `buildForcedDice`, with one difference: a partial match is fine here.
-- Registers `CONFIG.Dice.fulfillment.methods.dicevision` (`interactive: true`). In Replace mode **while connected**, sets `CONFIG.Dice.fulfillment.defaultMethod = "dicevision"`, so every die type uses it unless Core › Dice Configuration picks another method for that die. Disconnected → `""` again, so rolls are digital and no dialog opens. Another module's `defaultMethod` is left alone.
-- Foundry then opens its own `RollResolver` dialog and pauses the roll. The module tracks open dialogs via the `renderRollResolver`/`closeRollResolver` hooks and is a roll consumer (`client.addRollConsumer`): it wants a roll while any dialog has an empty, enabled `label[data-method="dicevision"] > input`. Each roll is matched with `matchDice()` and entered with `app.registerResult()`, which auto-submits once everything is filled. Rolls a consumer takes are never posted to chat.
+- Registers `CONFIG.Dice.fulfillment.methods.dicevision` (`interactive: true`). In Replace mode **while a session is active** (`getState().sessionActive`: connected, connecting, or waiting to reconnect), sets `CONFIG.Dice.fulfillment.defaultMethod = "dicevision"`. Foundry resolves `config[denomination] || config.default || defaultMethod`, so Core › Dice Configuration still wins, per die or through its Default selector.
+  - It's kept through a reconnect, so a brief drop doesn't quietly turn rolls digital: the dialog says DiceVision isn't connected.
+  - An explicit disconnect, an invalid session (4001), giving up after 5 retries, or leaving Replace mode restores the previous `defaultMethod` (another module's, or `""`). After that, rolls are digital and no dialog opens, except for dice set to DiceVision in Dice Configuration.
+- Foundry then opens its own `RollResolver` dialog and pauses the roll. The module tracks open dialogs via the `renderRollResolver`/`closeRollResolver` hooks and is a roll consumer (`client.addRollConsumer`). It wants a roll while any dialog has an empty, enabled `label[data-method="dicevision"] > input` for a die the camera can read. This works in any mode, so per-die Dice Configuration works in Off and Chat mode too.
+  - Each roll is matched with `matchDice()` and entered with `app.registerResult()`. Rolls a consumer takes are never posted to chat.
+  - `registerResult` → `_checkDone()` auto-submits once every read-only slot is filled, and only if the dialog has no manual-entry dice. Explode/reroll rows submit through their own arrow button instead.
+  - A `false` from `registerResult` counts the die as unused. If filling throws, an ApplyFailed toast is shown and the dialog keeps waiting. Each dialog's update is caught separately, and `client.sync()` always runs.
+- The status line only goes into dialogs with DiceVision dice. A roll that arrives after the dialog closed (we were registered, nothing wants it) gets a RollIgnored toast.
 - Matching: by die type, any order. A d10 showing 0 counts as 10. For a d100 slot, a percentile pair is a tens die (0/"00", 10..90) plus a units die (0..9), with 00 + 0 = 100. The bridge sends "00" and "0" both as 0. Out-of-range or extra dice are not used: a warning toast plus a notice in the dialog, and the dialog keeps waiting.
 - Explode/reroll add inputs without a re-render; a `MutationObserver` (new inputs only, to avoid reacting to our own status text) triggers a re-check.
 - Dice the camera can't read (anything not in `SUPPORTED_DICE`, e.g. d3, coins) are rolled digitally straight away.
-- The dialog's own **Submit** rolls whatever is still empty digitally, then closes, which releases the bridge. That's the fallback for a camera problem.
-- Foundry skips interactive fulfillment for blind rolls and for `allowInteractive: false` evaluations; those stay digital.
+- Digital fallback for a camera problem: the dialog's **Submit** rolls whatever is still empty digitally (first pass). `Roll._evaluate` then closes the dialog, which releases the bridge.
+  - Explode/reroll dice are added later by `resolveResult()`, after Submit has been disabled by `_toggleSubmission(false)`. Each one has its own arrow button, and the status line says so (the `…Extra` strings).
+  - Closing the dialog with X while such a die is pending leaves the roll unresolved. That's core behaviour.
+- No dialog when core skips interactive fulfillment: blind `/roll`s, `Roll#toMessage` in blind mode, `allowInteractive: false`, minimize/maximize. Systems that evaluate first still open it for blind rolls; dnd5e's sheet rolls call `roll.evaluate()` without `allowInteractive`.
 
 ## Reference Links
 
@@ -121,7 +129,7 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 **The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`.
 
 **While an app is waiting, the dashboard switches to continuous capture** (`bridgeTriggeredMode` in the dashboard's `useVTTIntegration`, on by default via its "Send automatically" toggle). So the module only registers when it actually wants a roll (`_shouldWait()`), and `_syncWaiting()` doesn't resend `waiting` while `registered`:
-- **Replace mode:** a roll dialog with empty DiceVision slots sends `waiting`. After each roll it re-sends `waiting` if slots are still empty, otherwise `cancel`. Closing the dialog (Submit) sends `cancel`.
+- **Roll dialogs (any mode):** a dialog with empty DiceVision slots sends `waiting`. After each roll it re-sends `waiting` if slots are still empty, otherwise `cancel`. Closing the dialog (Submit) sends `cancel`.
 - **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. When that roll arrives, the module sends `cancel` (unless a roll dialog still wants dice) so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
 - **Continuous mode on:** re-sends `waiting` after every roll, which keeps the dashboard capturing.
 - Rolls nobody in Foundry asked for (another app on the same session was waiting) are ignored.
@@ -179,9 +187,10 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → rolls ignored; mode `chat` → rolls appear in chat
 - [ ] Replace: `/roll 2d20kh+1d6+3` opens the dialog, fills from one physical roll, posts the right total, then `cancel`
-- [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally
+- [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally (the arrow, for explode/reroll dice)
 - [ ] Replace: dnd5e attack, damage and save rolls from a character sheet
-- [ ] Replace while disconnected: rolls are digital, no dialog
+- [ ] Replace after `/dv disconnect`: rolls are digital, no dialog. During a reconnect: the dialog opens and says not connected
+- [ ] Mode Off with DiceVision for d20 in Core › Dice Configuration: only d20s open the dialog; no Mode Off toast on load
 - [ ] Chat visibility: Everyone / GM Only / Only Me
 - [ ] Changing session code in settings reconnects
 - [ ] Auto-reconnect after connection drop

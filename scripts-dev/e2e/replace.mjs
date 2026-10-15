@@ -89,10 +89,14 @@ try {
   await dash.exited();
   check(roll.total === 9, `the right die fills it afterwards (${roll.total})`);
 
-  // Exploding dice ask for another die
-  dash = dashboard(['--max', '2', '--dice', 'd6=6;d6=2', '--watch', '3']);
+  // Exploding dice ask for another die; Submit is disabled by then, so the
+  // status points at the die's own arrow
+  dash = dashboard(['--max', '2', '--dice', 'd6=6;d6=2', '--delay', '1500', '--watch', '3']);
   await dash.until('connected');
   await chatCommand('/roll 1d6x');
+  await page.waitForFunction(() => /arrow/.test(document.querySelector('.dicevision-status')?.textContent ?? ''), null, { timeout: 10000 })
+    .then(() => check(true, 'explosion: status points at the arrow, not the disabled Submit'))
+    .catch(() => check(false, 'explosion: status points at the arrow, not the disabled Submit'));
   roll = await nextRoll();
   await dash.exited();
   check(roll.total === 8 && JSON.stringify(roll.dice) === '[["d6",6,2]]', `1d6x explodes into a second physical die ${JSON.stringify(roll.dice)}`);
@@ -125,6 +129,23 @@ try {
   } else {
     check(false, 'CONFIG.Dice.D20Roll missing: is the world running dnd5e?');
   }
+
+  // Mode Off + DiceVision for d20s in Core > Dice Configuration: only the d20 waits
+  await page.evaluate(async () => {
+    await game.settings.set('dicevision', 'mode', 'off');
+    await game.settings.set('core', foundry.dice.Roll.DICE_CONFIGURATION_SETTING, { d20: 'dicevision' });
+  });
+  dash = dashboard(['--max', '1', '--dice', 'd20=15', '--watch', '2']);
+  await dash.until('connected');
+  await chatCommand('/roll 1d20 + 1d6');
+  roll = await nextRoll();
+  await dash.exited();
+  const d20 = roll.dice.find(([d]) => d === 'd20');
+  check(d20?.[1] === 15 && roll.total > 15, `mode off + per-die config: d20 physical (15), d6 digital (total ${roll.total})`);
+  await page.evaluate(async () => {
+    await game.settings.set('core', foundry.dice.Roll.DICE_CONFIGURATION_SETTING, {});
+    await game.settings.set('dicevision', 'mode', 'replace');
+  });
 
   // Submit rolls the rest digitally and releases the dashboard
   dash = dashboard(['--max', '1', '--dice', 'd20=20', '--delay', '60000']);

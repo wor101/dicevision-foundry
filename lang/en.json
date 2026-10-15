@@ -3,7 +3,7 @@
   "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM-4N7B). Create one at dicevision.dirtyowlbear.com",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
-  "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry. Replace: every roll (/roll, character sheets) waits for your physical dice while connected; Core \u203a Dice Configuration can still set individual die types to another method.",
+  "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry. Replace: every roll (/roll, character sheets) waits for your physical dice while connected; Core \u203a Dice Configuration can still set individual die types (or its Default) to another method.",
   "DICEVISION.Settings.Mode.Off": "Off",
   "DICEVISION.Settings.Mode.Chat": "Chat \u2014 Display rolls in chat",
   "DICEVISION.Settings.Mode.Replace": "Replace \u2014 Use physical dice for Foundry rolls",
@@ -29,8 +29,10 @@
   "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
   "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
   "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
-  "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change it to Replace or Chat in module settings (or /dv mode replace) to use physical dice.",
-  "DICEVISION.Notifications.ReplaceMode": "DiceVision: in Replace mode, just roll in Foundry (e.g. /roll 1d20 or a character sheet) and it will wait for your physical dice.",
+  "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Use /dv mode replace (or module settings) to roll physical dice for Foundry's rolls, or /dv mode chat to post them to chat.",
+  "DICEVISION.Notifications.ReplaceMode": "DiceVision: in Replace mode, just roll in Foundry (e.g. /roll 1d20 or a character sheet). While DiceVision is connected, it waits for your physical dice.",
+  "DICEVISION.Notifications.ApplyFailed": "DiceVision: couldn't enter the dice in the roll dialog ({error}). Roll again, or click Submit to roll digitally.",
+  "DICEVISION.Notifications.RollIgnored": "DiceVision: no Foundry roll is waiting for dice, so this physical roll was ignored.",
   "DICEVISION.Notifications.NotConnected": "DiceVision: Not connected. Check your session code in module settings, or use /dv connect <code>.",
   "DICEVISION.Notifications.ConnectFailed": "DiceVision: Could not connect ({error}). Check your session code.",
   "DICEVISION.Notifications.CommandFailed": "DiceVision: {command} failed ({error}). See the console for details.",
@@ -54,10 +56,14 @@
 
   "DICEVISION.Fulfillment.Label": "DiceVision (physical dice)",
   "DICEVISION.Fulfillment.Waiting": "DiceVision: roll {dice} in front of your camera. Submit rolls the rest digitally.",
-  "DICEVISION.Fulfillment.Done": "DiceVision: all physical dice received.",
+  "DICEVISION.Fulfillment.WaitingExtra": "DiceVision: roll {dice} in front of your camera. The arrow next to a die rolls it digitally.",
+  "DICEVISION.Fulfillment.Done": "DiceVision: all dice entered.",
   "DICEVISION.Fulfillment.NotConnected": "DiceVision is not connected. Click Submit to roll digitally.",
+  "DICEVISION.Fulfillment.NotConnectedExtra": "DiceVision is not connected. Click the arrow next to a die to roll it digitally.",
   "DICEVISION.Fulfillment.NotNeeded": "Not needed for this roll: {dice}.",
   "DICEVISION.Fulfillment.OutOfRange": "Out of range, roll again: {dice}.",
+  "DICEVISION.Fulfillment.MissingPair": "A d100 needs two d10s, tens and units, rolled together. Got: {dice}.",
+  "DICEVISION.Fulfillment.EmptyRoll": "DiceVision received a roll with no dice. Roll again.",
 
   "DICEVISION.Chat.Total": "Total",
   "DICEVISION.Chat.RollReceived": "Roll received via DiceVision"

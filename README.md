@@ -33,17 +33,19 @@ To install a specific pre-release, use its tag's URL instead, e.g. `https://gith
 
 ## Replace mode
 
-Every Foundry roll waits for your physical dice while DiceVision is connected. That includes `/roll` and system rolls such as dnd5e attacks, damage, saves and advantage.
+Every Foundry roll waits for your physical dice while DiceVision is connected. That includes `/roll` and system rolls, such as dnd5e rolls with advantage.
 
 - **Roll all the dice at once, in any order.** They're matched by type, so for `2d20kh + 1d6` roll two d20s and a d6 together.
 - **Missing dice:** the dialog fills what it can and waits for the rest. You can roll the missing dice separately.
 - **Wrong or extra dice** are ignored, with a warning in the dialog. Roll again.
 - **Percentile:** roll two d10s (a tens die and a units die) for a d100. 00 + 0 is 100. A d10 showing 0 counts as 10.
 - **Exploding dice and rerolls** ask for another die.
-- **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally.
-- Dice the camera can't read (d2, d3, coins) are rolled digitally. While DiceVision is disconnected, every roll is digital.
+- **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally. For an extra die from an explosion or reroll, click the arrow next to it.
+- Dice the camera can't read (d2, d3, coins) are rolled digitally.
+- **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, or once reconnecting gives up, Foundry rolls digitally as usual.
+- Blind `/roll`s are rolled digitally by Foundry.
 
-To use physical dice only for some die types (say, d20s), set Operating Mode to **Off** and choose **DiceVision** for those dice in **Core › Dice Configuration**.
+To use physical dice only for some die types (say, d20s), set Operating Mode to **Off** and choose **DiceVision** for those dice in **Core › Dice Configuration**. DiceVision still connects automatically. Those dice open the dialog even while DiceVision is disconnected; click Submit to roll them digitally. A **Default** method set in Dice Configuration overrides Replace mode for every die.
 
 ## Chat mode
 

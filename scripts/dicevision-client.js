@@ -131,6 +131,7 @@ export class DiceVisionClient {
       this.ws.onerror = (error) => {
         console.error("[DiceVision] WebSocket error:", error);
       };
+      this._notifyState();
     } catch (err) {
       console.error("[DiceVision] Failed to create WebSocket:", err);
       ui.notifications.error(
@@ -247,7 +248,8 @@ export class DiceVisionClient {
   requestRoll() {
     const mode = game.settings.get(MODULE_ID, "mode");
     if (mode === "replace") {
-      ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.ReplaceMode"));
+      if (this.isConnected()) ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.ReplaceMode"));
+      else ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
       return false;
     }
     if (mode !== "chat") {
@@ -284,12 +286,14 @@ export class DiceVisionClient {
   }
 
   /**
-   * @returns {{connected: boolean, sessionCode: string|null, mode: string,
-   *   continuous: boolean, waiting: boolean}}
+   * @returns {{connected: boolean, sessionActive: boolean, sessionCode: string|null,
+   *   mode: string, continuous: boolean, waiting: boolean}}
+   *   sessionActive: connected, connecting, or waiting to reconnect
    */
   getState() {
     return {
       connected: this.isConnected(),
+      sessionActive: !!this.ws || !!this.reconnectTimeout,
       sessionCode: this.sessionCode,
       mode: game.settings.get(MODULE_ID, "mode"),
       continuous: game.settings.get(MODULE_ID, "continuous"),
@@ -368,6 +372,7 @@ export class DiceVisionClient {
 
     console.log("[DiceVision] Roll received:", rollData);
 
+    const wasRegistered = this.registered;
     // A roll dialog waiting for dice takes the roll; otherwise chat mode may
     const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
     const postToChat = !consumer && this._wantsChatRoll();
@@ -378,6 +383,9 @@ export class DiceVisionClient {
         consumer.consume(rollData);
       } catch (err) {
         console.error("[DiceVision] Failed to apply roll:", err);
+        ui.notifications.error(
+          game.i18n.format("DICEVISION.Notifications.ApplyFailed", { error: err.message })
+        );
       }
     }
 
@@ -393,7 +401,13 @@ export class DiceVisionClient {
 
     if (!postToChat) {
       // Used by a roll dialog, mode off, or another app on this session asked for it
-      if (!consumer) console.log("[DiceVision] No roll requested, ignoring roll");
+      if (!consumer) {
+        console.log("[DiceVision] No roll requested, ignoring roll");
+        // We asked for it, but the roll dialog was closed or filled meanwhile
+        if (wasRegistered && game.settings.get(MODULE_ID, "mode") === "replace") {
+          ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.RollIgnored"));
+        }
+      }
       return;
     }
 

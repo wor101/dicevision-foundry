@@ -15,13 +15,17 @@ export const SUPPORTED_DICE = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20, 
  * @property {string} type    e.g. "d20"
  * @property {number} value   Face value. The dashboard sends numbers: pips as
  *                            their dot count, a d10 "0" and "00" both as 0.
+ *                            Faces it can't turn into a number also arrive
+ *                            as 0; the classifier only reads numerals and
+ *                            pips today, so a d10 0 is taken as a real 0.
  */
 
 /**
  * @typedef {object} UnusedDie
  * @property {string} type
  * @property {number} value
- * @property {"not-needed"|"out-of-range"} reason
+ * @property {"not-needed"|"out-of-range"|"missing-pair"} reason
+ *   missing-pair: a d10 left over while a d100 still needs a tens + units pair
  */
 
 /**
@@ -48,7 +52,8 @@ export function matchDice(dice, needs) {
 
   // d100 slots first, so a percentile pair isn't split up to fill d10 slots.
   // A pair is a tens die (00, 10..90; "00" arrives as 0) plus a units die
-  // (0..9). Prefer an unambiguous tens die (10..90) before a 0.
+  // (0..9). Prefer an unambiguous tens die (10..90) before a 0: a d10's own
+  // "0" face arrives as 0, never as 10, so only a percentile die sends 10..90.
   for (const slot of open.filter(s => s.denomination === "d100")) {
     const direct = take(d => d.type === "d100" && inRange(d.value, 100));
     if (direct) {
@@ -69,12 +74,12 @@ export function matchDice(dice, needs) {
   for (const die of pool) {
     const value = die.type === "d10" && die.value === 0 ? 10 : die.value;
     const slot = open.find(s => s.denomination === die.type);
-    if (!slot) {
-      unused.push({ ...die, reason: "not-needed" });
-    } else if (!inRange(value, SUPPORTED_DICE[die.type])) {
-      unused.push({ ...die, reason: "out-of-range" });
-    } else {
+    if (slot && inRange(value, SUPPORTED_DICE[die.type])) {
       fill(slot, value);
+    } else if (die.type === "d10" && open.some(s => s.denomination === "d100")) {
+      unused.push({ ...die, reason: "missing-pair" });
+    } else {
+      unused.push({ ...die, reason: slot ? "out-of-range" : "not-needed" });
     }
   }
 

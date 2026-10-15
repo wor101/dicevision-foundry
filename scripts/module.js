@@ -8,7 +8,7 @@
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
-import { registerRollIntercept } from "./roll-intercept.js";
+import { registerRollIntercept, diceConfigUsesDiceVision } from "./roll-intercept.js";
 
 const MODULE_ID = "dicevision";
 
@@ -53,7 +53,8 @@ Hooks.once("ready", () => {
   if (sessionCode && autoConnect) {
     diceVisionClient.connect(sessionCode);
 
-    if (mode === "off") {
+    // Off still fills dice set to DiceVision in Core > Dice Configuration
+    if (mode === "off" && !diceConfigUsesDiceVision()) {
       ui.notifications.info(
         game.i18n.localize("DICEVISION.Notifications.ModeOff")
       );

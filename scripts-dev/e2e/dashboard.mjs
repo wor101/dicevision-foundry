@@ -8,9 +8,13 @@ const children = new Set();
 
 /**
  * Start a fake dashboard on `code` with fake-dashboard.mjs `args`.
- * @returns {{exited, until, count, events, done}}
+ * @returns {{exited, until, count, events, done, kill}}
  *   exited(ms): resolves to the exit status; kills it and rejects after ms
  *   until(name, ms): resolves once an event of that name has been seen
+ *   count(name): how many events of that name so far
+ *   events: every event line, parsed
+ *   done(): the final "done" event, if it has finished
+ *   kill(): stop it (for a dashboard that is never meant to finish)
  */
 export function startDashboard(code, args) {
   const proc = spawn('node', [DASHBOARD, code, ...args]);
