@@ -31,6 +31,10 @@ export class DiceVisionClient {
     this.pendingChatRoll = false;
     // Whether the bridge currently has us registered as waiting
     this.registered = false;
+    // A "no dice detected" toast was shown for the current chat request
+    this.noDiceShown = false;
+    // Server error messages already shown, so a repeat doesn't toast again
+    this.shownErrors = new Set();
     this._setupHooks();
   }
 
@@ -118,6 +122,7 @@ export class DiceVisionClient {
           ui.notifications.error(
             game.i18n.localize("DICEVISION.Notifications.InvalidSession")
           );
+          this._warnReplaceDigital();
           this.sessionCode = null;
           this.pendingChatRoll = false;
           this._notifyState();
@@ -137,6 +142,7 @@ export class DiceVisionClient {
       ui.notifications.error(
         game.i18n.format("DICEVISION.Notifications.ConnectFailed", { error: err.message })
       );
+      this._warnReplaceDigital();
       this.ws = null;
       this.sessionCode = null;
       this._notifyState();
@@ -259,6 +265,7 @@ export class DiceVisionClient {
     if (this._wantsChatRoll()) return true;
 
     this.pendingChatRoll = true;
+    this.noDiceShown = false;
     if (!this.sendWaiting()) {
       this.pendingChatRoll = false;
       ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
@@ -283,8 +290,10 @@ export class DiceVisionClient {
 
   /**
    * @returns {{connected: boolean, sessionActive: boolean, sessionCode: string|null,
-   *   mode: string, continuous: boolean, waiting: boolean}}
+   *   mode: string, continuous: boolean, waiting: boolean, dialogWaiting: boolean}}
    *   sessionActive: connected, connecting, or waiting to reconnect
+   *   waiting: a chat roll is wanted (dice button, /dv roll, continuous)
+   *   dialogWaiting: a Foundry roll dialog is waiting for physical dice
    */
   getState() {
     return {
@@ -293,7 +302,8 @@ export class DiceVisionClient {
       sessionCode: this.sessionCode,
       mode: game.settings.get(MODULE_ID, "mode"),
       continuous: game.settings.get(MODULE_ID, "continuous"),
-      waiting: this.isConnected() && this._wantsChatRoll()
+      waiting: this.isConnected() && this._wantsChatRoll(),
+      dialogWaiting: this.isConnected() && this._consumerWantsRoll()
     };
   }
 
@@ -310,8 +320,15 @@ export class DiceVisionClient {
         break;
 
       case "roll":
+        if (!message.data) {
+          // The dashboard dropped its waiting flag when it sent this; re-arm
+          console.warn("[DiceVision] Roll message without data:", message);
+          this.registered = false;
+          this._syncWaiting();
+          break;
+        }
         // The bridge stamps the outer message; the dashboard's roll data has no timestamp
-        this._onRollReceived(message.data && { timestamp: message.timestamp, ...message.data });
+        this._onRollReceived({ timestamp: message.timestamp, ...message.data });
         break;
 
       case "waiting":
@@ -336,6 +353,12 @@ export class DiceVisionClient {
 
       case "error":
         console.warn("[DiceVision] Server error:", message.message);
+        if (!this.shownErrors.has(message.message)) {
+          this.shownErrors.add(message.message);
+          ui.notifications.warn(
+            game.i18n.format("DICEVISION.Notifications.ServerError", { error: message.message ?? "unknown" })
+          );
+        }
         break;
 
       default:
@@ -373,7 +396,8 @@ export class DiceVisionClient {
     console.log("[DiceVision] Roll received:", rollData);
 
     const wasRegistered = this.registered;
-    // A roll dialog waiting for dice takes the roll; otherwise chat mode may
+    // A roll dialog waiting for dice takes the roll; otherwise it goes to
+    // chat if one was requested (Chat or Replace mode)
     const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
     const postToChat = !consumer && this._wantsChatRoll();
     if (postToChat) this.pendingChatRoll = false;
@@ -422,18 +446,32 @@ export class DiceVisionClient {
   /**
    * The dashboard looked for a roll but found no dice. It keeps capturing,
    * so we stay registered; just tell the user if they're waiting.
+   * - A roll dialog shows it in the dialog (no toast).
+   * - A one-off chat request (dice button, /dv roll) gets one toast.
+   * - Continuous mode gets nothing: it is always waiting, so every empty
+   *   capture (a hand in view, dice being picked up) would toast.
    */
   _onNoDice() {
     if (!this.registered) return; // another app (or nobody here) asked
     const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
-    try {
-      consumer?.noDice?.();
-    } catch (err) {
-      console.error("[DiceVision] Failed to show no-dice notice:", err);
+    if (consumer) {
+      try {
+        consumer.noDice?.();
+      } catch (err) {
+        console.error("[DiceVision] Failed to show no-dice notice:", err);
+      }
+      return;
     }
-    if (consumer || this._wantsChatRoll()) {
+    if (this.pendingChatRoll && !this.noDiceShown && this._wantsChatRoll()) {
+      this.noDiceShown = true;
       ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NoDice"));
     }
+  }
+
+  /** Replace mode lost the session for good: say that rolls are now digital. */
+  _warnReplaceDigital() {
+    if (game.settings.get(MODULE_ID, "mode") !== "replace") return;
+    ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ReplaceDigital"));
   }
 
   /** Send "waiting" message to backend. */
@@ -473,6 +511,7 @@ export class DiceVisionClient {
       ui.notifications.warn(
         game.i18n.localize("DICEVISION.Notifications.MaxReconnect")
       );
+      this._warnReplaceDigital();
       this.pendingChatRoll = false;
       return;
     }

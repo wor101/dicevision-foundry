@@ -36,7 +36,7 @@ function isOptionValue(a) {
 }
 
 if (!code) {
-  console.error('usage: fake-dashboard.mjs SESSION_CODE [--dice 1d20,2d6] [--max N] [--delay MS] [--watch S] [--url URL]');
+  console.error('usage: fake-dashboard.mjs SESSION_CODE [--dice 1d20,2d6] [--max N] [--delay MS] [--no-dice N] [--watch S] [--url URL]');
   process.exit(2);
 }
 

@@ -41,11 +41,12 @@ export function registerChatControls(client) {
  * @param {string} message
  */
 export function plainText(message) {
-  const entities = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
+  const entities = { "&nbsp;": " ", "&#160;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
   return String(message)
-    .replace(/<br\b[^>]*>/gi, "\n")
+    // Line and paragraph breaks (Shift+Enter) separate words, as in Foundry's parse()
+    .replace(/<br\b[^>]*>|<\/p>\s*<p\b[^>]*>/gi, "\n")
     .replace(/<[^>]*>/g, "")
-    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, entity => entities[entity])
+    .replace(/&(nbsp|amp|lt|gt|quot|#39|#160);/g, entity => entities[entity])
     .trim();
 }
 
@@ -173,7 +174,8 @@ async function handleCommand(client, [sub = "help", arg]) {
         session: s.sessionCode ?? "-",
         mode: s.mode,
         continuous: s.continuous ? "on" : "off",
-        waiting: s.waiting ? "yes" : "no"
+        waiting: s.waiting ? "yes" : "no",
+        dialog: s.dialogWaiting ? "yes" : "no"
       });
       break;
     }

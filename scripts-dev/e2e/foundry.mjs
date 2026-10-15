@@ -6,6 +6,7 @@
 //   FOUNDRY_WORLD           default dicevision-test
 //   FOUNDRY_ADMIN_PASSWORD  admin password (only needed to launch the world)
 //   FOUNDRY_ADMIN_USER      admin username, if the server has one (v14+)
+//   FOUNDRY_USER            user replace.mjs joins as (default Gamemaster)
 //   PLAYWRIGHT_MODULE       path to playwright's index.mjs if `playwright`
 //                           isn't resolvable from here
 

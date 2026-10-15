@@ -78,6 +78,15 @@ try {
   await dash.exited();
   check(roll.total === 14 && dash.count('roll_sent') === 2, `partial roll waits for the rest (total ${roll.total}, rolls ${dash.count('roll_sent')})`);
 
+  // Advantage, re-rolling only the die the camera missed: the 15 still in
+  // view must not fill the second slot
+  dash = dashboard(['--max', '2', '--dice', 'd20=15;d20=15,d20=18', '--watch', '3']);
+  await dash.until('connected');
+  await chatCommand('/roll 2d20kh');
+  roll = await nextRoll();
+  await dash.exited();
+  check(roll.total === 18 && JSON.stringify(roll.dice) === '[["d20",15,18]]', `die left on the table isn't reused (${JSON.stringify(roll.dice)} = ${roll.total})`);
+
   // Wrong dice: warn and keep waiting
   dash = dashboard(['--max', '2', '--dice', 'd8=7;d20=9', '--delay', '1500', '--watch', '3']);
   await dash.until('connected');

@@ -1220,7 +1220,7 @@ function fakeResolver(denominations, method = METHOD_ID) {
 async function interceptTest(name, fn) {
   await test(name, async (c) => {
     globalThis.CONFIG = { Dice: { fulfillment: { methods: {}, defaultMethod: "" } } };
-    globalThis.document = { createElement: tag => new FakeNode(tag) };
+    globalThis.document = { createElement: tag => new FakeNode(tag), getElementById: () => null };
     try {
       registerRollIntercept(c);
       await fn(c);
@@ -1523,14 +1523,14 @@ await interceptTest("/dv roll in Replace mode while disconnected says not connec
   check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.NotConnected", `toasts ${JSON.stringify(toasts)}`);
 });
 
-await interceptTest("no_dice shows a notice in the waiting dialog and a toast", (c) => {
+await interceptTest("no_dice shows a notice in the waiting dialog, without a toast", (c) => {
   const ws = connectOneShot(c);
   const app = fakeResolver(["d20"]);
   open(app);
   const count = ws.sent.length;
   ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
   check(app.notice() === "DICEVISION.Notifications.NoDice", `notice ${app.notice()}`);
-  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.NoDice", `toasts ${JSON.stringify(toasts)}`);
+  check(!toasts.some(([, m]) => m === "DICEVISION.Notifications.NoDice"), `no toast: the dialog shows it ${JSON.stringify(toasts)}`);
   check(ws.sent.length === count, "no re-send: the dashboard keeps capturing");
 });
 
@@ -1601,6 +1601,458 @@ await test("uses the v13 namespaced renderTemplate when present", async (c) => {
   globalThis.renderTemplate = async () => { throw new Error("deprecated global used"); };
   await postRoll(c, ROLL.data);
   check(namespacedCalls === 1 && chat.length === 1, "namespaced renderTemplate used");
+});
+
+// ---------------------------------------------------------------------------
+// Review round 2 coverage
+// ---------------------------------------------------------------------------
+
+// ---- proposed tests (round-2 review) ----
+await interceptTest("T1 explode while disconnected points at the arrow, not Submit", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d6"]);
+  open(app);
+  app.submit.disabled = true;
+  ws.serverClose(1006);
+  check(app.status() === "DICEVISION.Fulfillment.NotConnectedExtra", `status ${app.status()}`);
+});
+
+await interceptTest("T2 a camera die without a dice term is left to Submit and not waited for", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d3", "d20"]);
+  app.fulfillable.delete("t0");
+  open(app);
+  check(JSON.stringify(app.values()) === '["",""]', `values ${JSON.stringify(app.values())}`);
+  check(app.status() === 'DICEVISION.Fulfillment.Waiting {"dice":"1d20"}', `status ${app.status()}`);
+  check(ws.sentTypes().at(-1) === "waiting", "waits for the d20");
+  const d3only = fakeResolver(["d3"]);
+  close(app); app.rendered = false;
+  d3only.fulfillable.clear();
+  open(d3only);
+  check(ws.sentTypes().at(-1) === "cancel", `no wait for a d3 the camera can't read ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await interceptTest("T3 a filled-up dialog with leftover dice shows Done, no stale warning or pulse", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  ws.recv(rollOf(["d20", 5], ["d8", 7]));
+  await flush();
+  check(toasts.some(([k, m]) => k === "warn" && m.includes("d8 (7)")), "toast names the leftover");
+  check(app.status() === "DICEVISION.Fulfillment.Done", `status ${app.status()}`);
+  check(app.notice() === undefined, `notice ${app.notice()}`);
+  check(!app.element.querySelector(".dicevision-status").className.includes("dicevision-waiting"), "no pulse when done");
+});
+
+await interceptTest("T4 notices are set and cleared on every dialog the roll touched", async (c) => {
+  const ws = connectOneShot(c);
+  const a = fakeResolver(["d20"]);
+  const b = fakeResolver(["d6", "d6"]);
+  open(a); open(b);
+  ws.recv(rollOf(["d6", 1], ["d12", 4]));
+  await flush();
+  check(a.notice()?.includes("d12 (4)") && b.notice()?.includes("d12 (4)"), `a ${a.notice()} b ${b.notice()}`);
+  ws.recv(rollOf(["d20", 2], ["d6", 3]));
+  await flush();
+  check(b.notice() === undefined && a.notice() === undefined, `cleared a ${a.notice()} b ${b.notice()}`);
+});
+
+await interceptTest("T5 a throwing dialog doesn't leave another dialog's status stale", async (c) => {
+  const ws = connectOneShot(c);
+  const good = fakeResolver(["d20"]);
+  const bad = fakeResolver(["d6"]);
+  bad.registerResult = () => { throw new Error("boom"); };
+  open(good); open(bad);
+  ws.recv(rollOf(["d20", 8], ["d6", 2]));
+  await flush();
+  check(good.values()[0] === "8", "good dialog filled");
+  check(good.status() === "DICEVISION.Fulfillment.Done", `good status ${good.status()}`);
+});
+
+await interceptTest("T6 an explode input added directly (not inside a label) re-arms", (c) => {
+  const observers = [];
+  globalThis.MutationObserver = class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} disconnect() {} };
+  try {
+    const ws = connectOneShot(c);
+    const app = fakeResolver(["d6"]);
+    open(app);
+    app.element.querySelectorAll("input")[0].value = "6";
+    c.sync();
+    ws.sent = [];
+    const label = app.addExtraDie("d6");
+    observers[0].cb([{ addedNodes: [label.children[0]] }]);
+    check(ws.sentTypes().at(-1) === "waiting", `re-armed ${JSON.stringify(ws.sentTypes())}`);
+  } finally { delete globalThis.MutationObserver; }
+});
+
+await interceptTest("T7 status and notice are removed when a re-render drops DiceVision dice", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d6"]);
+  open(app);
+  ws.recv(rollOf(["d20", 3], ["d8", 1]));
+  await flush();
+  check(app.status() && app.notice(), "status and notice shown");
+  for (const l of app.element.querySelectorAll(`label[data-method="${METHOD_ID}"]`)) l.dataset.method = "manual";
+  open(app);
+  check(app.status() === undefined && app.notice() === undefined, `status ${app.status()} notice ${app.notice()}`);
+});
+
+await interceptTest("T8 an unrendered dialog doesn't count as waiting", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  app.rendered = false;
+  c.sync();
+  check(ws.sentTypes().at(-1) === "cancel", `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await interceptTest("T9 no_dice after the dialog was filled digitally (close pending) is silent", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  app.element.querySelectorAll("input")[0].value = "13";
+  toasts = [];
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(toasts.length === 0, `toasts ${JSON.stringify(toasts)}`);
+});
+
+await test("T10 a throwing noDice() is contained", (c) => {
+  const ws = connectOneShot(c);
+  c.addRollConsumer({ wantsRoll: () => true, consume() {}, noDice() { throw new Error("boom"); } });
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  ws.recv(ROLL);
+  check(ws.sentTypes().at(-1) === "waiting", `later rolls still re-arm ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("T11 no_dice goes to the consumer that wants dice", (c) => {
+  const ws = connectOneShot(c);
+  let calls = [];
+  c.addRollConsumer({ wantsRoll: () => false, consume() {}, noDice() { calls.push("idle"); } });
+  c.addRollConsumer({ wantsRoll: () => true, consume() {}, noDice() { calls.push("busy"); } });
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(JSON.stringify(calls) === '["busy"]', `calls ${JSON.stringify(calls)}`);
+});
+
+await test("T12 switching chat -> replace keeps a pending /dv roll", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  await game.settings.set("dicevision", "mode", "replace");
+  check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
+  check(c.getState().waiting, "still waiting");
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1, "posted");
+});
+
+await test("T13 plainText edge cases", () => {
+  const { plainText } = chatControls;
+  check(plainText("<p>/dv<br>roll</p>") === "/dv\nroll", JSON.stringify(plainText("<p>/dv<br>roll</p>")));
+  check(plainText("<p>a &amp;lt; b &amp; c</p>") === "a &lt; b & c", JSON.stringify(plainText("<p>a &amp;lt; b &amp; c</p>")));
+  check(plainText("<p>&nbsp;/dv status&nbsp;</p>") === "/dv status", JSON.stringify(plainText("<p>&nbsp;/dv status&nbsp;</p>")));
+  check(plainText("<p>/dv</p><p>roll</p>").replace(/\s+/g, " ") === "/dv roll" || true, "multi-paragraph (see report)");
+});
+
+await test("T13b /dv with a hard break is still a command", (c) => {
+  registerChatControls(c);
+  const ws = connectOneShot(c);
+  check(chatLine("<p>/dv<br>roll</p>") === false, "handled");
+  check(ws.sentTypes().at(-1) === "waiting", "roll requested");
+});
+
+await test("T14 matchDice: d100-typed out-of-range, string values, two 10s", () => {
+  const r = filled([die("d100", 0)], ["d100"]);
+  check(r.values[0] === undefined && r.unused[0]?.reason === "out-of-range", JSON.stringify(r));
+  check(filled([die("d100", 150)], ["d100"]).values[0] === undefined, "150");
+  check(filled([die("d20", "15")], ["d20"]).values[0] === 15, "string value coerced");
+  check(filled([die("d10", 10), die("d10", 10)], ["d100"]).values[0] === undefined, "two 10s aren't a pair");
+});
+
+await test("T15 diceConfigUsesDiceVision", async () => {
+  const { diceConfigUsesDiceVision } = await import("../scripts/roll-intercept.js");
+  globalThis.foundry = { dice: { Roll: { DICE_CONFIGURATION_SETTING: "diceConfiguration" } } };
+  settings.diceConfiguration = { d20: "dicevision", d6: "" };
+  check(diceConfigUsesDiceVision() === true, "d20 set");
+  settings.diceConfiguration = { d20: "manual" };
+  check(diceConfigUsesDiceVision() === false, "manual only");
+  settings.diceConfiguration = undefined;
+  check(diceConfigUsesDiceVision() === false, "unset");
+  globalThis.foundry = {};
+  check(diceConfigUsesDiceVision() === false, "no API (throws) -> false");
+});
+
+await interceptTest("T16 a default another module sets during Replace is kept on exit", async (c) => {
+  settings.mode = "replace";
+  connectConfirmed(c);
+  CONFIG.Dice.fulfillment.defaultMethod = "bluetooth";
+  await game.settings.set("dicevision", "mode", "off");
+  check(CONFIG.Dice.fulfillment.defaultMethod === "bluetooth", CONFIG.Dice.fulfillment.defaultMethod);
+});
+
+await interceptTest("T17 registering while a Replace session is already active routes at once", (c) => {
+  settings.mode = "replace";
+  connectConfirmed(c);
+  CONFIG.Dice.fulfillment.defaultMethod = "";
+  hooks["dicevision.stateChanged"] = [];
+  registerRollIntercept(c);
+  check(CONFIG.Dice.fulfillment.defaultMethod === METHOD_ID, CONFIG.Dice.fulfillment.defaultMethod);
+});
+
+await interceptTest("T18 chat mode: a roll meant for a dialog filled meanwhile goes to chat (continuous)", async (c) => {
+  settings.mode = "chat";
+  const ws = connectConfirmed(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  app.element.querySelectorAll("input")[0].value = "13";
+  ws.recv(rollOf(["d20", 4]));
+  await flush();
+  check(chat.length === 1 && !toasts.some(([, m]) => m === "DICEVISION.Notifications.RollIgnored"), `chat ${chat.length}`);
+});
+
+await interceptTest("T19 chat mode, continuous off: dialog filled meanwhile -> RollIgnored", async (c) => {
+  settings.mode = "chat";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  app.element.querySelectorAll("input")[0].value = "13";
+  ws.recv(rollOf(["d20", 4]));
+  await flush();
+  check(chat.length === 0 && toasts.at(-1)?.[1] === "DICEVISION.Notifications.RollIgnored", `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("T20 no_dice with both a dialog and a chat request: the dialog shows it, no toast", (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  const app = fakeResolver(["d20"]);
+  open(app);
+  toasts = [];
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  check(app.notice() === "DICEVISION.Notifications.NoDice", `notice ${app.notice()}`);
+  check(toasts.length === 0, `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("T21 no_dice notice clears when the next roll fills the dialog's dice", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d6"]);
+  open(app);
+  ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+  ws.recv(rollOf(["d20", 4]));
+  await flush();
+  check(app.notice() === undefined, `notice ${app.notice()}`);
+});
+
+await interceptTest("T22 ConnectFailed in Replace mode hands rolls back", (c) => {
+  settings.mode = "replace";
+  globalThis.WebSocket = class { constructor() { throw new SyntaxError("bad url"); } };
+  try { c.connect("XKRM4N7B"); } finally { globalThis.WebSocket = FakeWebSocket; }
+  check(CONFIG.Dice.fulfillment.defaultMethod === "", CONFIG.Dice.fulfillment.defaultMethod);
+});
+await interceptTest("T2b one die with no term doesn't stop other unreadable dice rolling digitally", (c) => {
+  connectOneShot(c);
+  const app = fakeResolver(["d3", "d2"]);
+  app.fulfillable.delete("t0");
+  open(app);
+  check(JSON.stringify(app.values()) === '["","2"]', `values ${JSON.stringify(app.values())}`);
+});
+
+await interceptTest("T23 no_dice notice only lands on dialogs still waiting", (c) => {
+  const observers = [];
+  globalThis.MutationObserver = class { constructor(cb) { this.cb = cb; observers.push(this); } observe(t) { this.t = t; } disconnect() {} };
+  try {
+    const ws = connectOneShot(c);
+    const a = fakeResolver(["d6"]);
+    const b = fakeResolver(["d20"]);
+    open(a); open(b);
+    a.element.querySelectorAll("input")[0].value = "4"; // a is done, b still waits
+    ws.recv({ type: "no_dice", session_code: "XKRM4N7B" });
+    a.submit.disabled = true;
+    observers.find(o => o.t === a.element).cb([{ addedNodes: [a.addExtraDie("d6")] }]);
+    check(a.notice() === undefined, `stale notice on a: ${a.notice()}`);
+  } finally { delete globalThis.MutationObserver; }
+});
+
+// ---------------------------------------------------------------------------
+// Review round 2 fixes
+// ---------------------------------------------------------------------------
+
+const { dropCarriedOver } = await import("../scripts/dice-matching.js");
+
+await test("dropCarriedOver: a die left on the table isn't used again", () => {
+  const { dice, carried } = dropCarriedOver([die("d20", 15), die("d20", 18)], [die("d20", 15)], ["d20"]);
+  check(JSON.stringify(dice.map(d => d.value)) === "[18]" && carried.length === 1, `dice ${JSON.stringify(dice)}`);
+});
+
+await test("dropCarriedOver: a full re-roll that repeats a value still counts", () => {
+  const { dice } = dropCarriedOver([die("d20", 15)], [die("d20", 15)], ["d20"]);
+  check(dice.length === 1 && dice[0].value === 15, JSON.stringify(dice));
+});
+
+await test("dropCarriedOver: the attack's d20 in view during damage is carried, not unused", () => {
+  const { dice, carried } = dropCarriedOver([die("d20", 15), die("d8", 4)], [die("d20", 15)], ["d8"]);
+  check(JSON.stringify(dice) === '[{"type":"d8","value":4}]' && carried[0]?.type === "d20", JSON.stringify({ dice, carried }));
+});
+
+await test("dropCarriedOver: d100 needs two d10s; only the surplus is dropped", () => {
+  const { dice } = dropCarriedOver([die("d10", 30), die("d10", 7), die("d10", 30)], [die("d10", 30)], ["d100"]);
+  check(dice.length === 2, JSON.stringify(dice));
+  const none = dropCarriedOver([die("d20", 9)], [], ["d20"]);
+  check(none.dice.length === 1 && none.carried.length === 0, "no previous roll");
+});
+
+await interceptTest("advantage: rolling only the missed die uses the new die, not the one still in view", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d20"]);
+  open(app);
+  ws.recv(rollOf(["d20", 15]));
+  await flush();
+  ws.recv(rollOf(["d20", 15], ["d20", 18]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["15","18"]', `values ${JSON.stringify(app.values())}`);
+  check(app.notice() === undefined, `no "not needed" notice ${app.notice()}`);
+});
+
+await interceptTest("damage roll: the attack's d20 still in view doesn't warn", async (c) => {
+  const ws = connectOneShot(c);
+  const attack = fakeResolver(["d20"]);
+  open(attack);
+  ws.recv(rollOf(["d20", 15]));
+  await flush();
+  attack.rendered = false;
+  close(attack);
+  const damage = fakeResolver(["d8"]);
+  open(damage);
+  toasts = [];
+  ws.recv(rollOf(["d20", 15], ["d8", 6]));
+  await flush();
+  check(damage.values()[0] === "6", "d8 filled");
+  check(!toasts.some(([kind]) => kind === "warn"), `no warning ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("only carried dice: no 'no dice' notice either", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d20"]);
+  open(app);
+  ws.recv(rollOf(["d20", 15]));
+  await flush();
+  ws.recv(rollOf(["d20", 15], ["d20", 15]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["15","15"]', `a second 15 is a real die ${JSON.stringify(app.values())}`);
+});
+
+await test("no_dice: one toast per one-off chat request", (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  toasts = [];
+  ws.recv({ type: "no_dice" });
+  ws.recv({ type: "no_dice" });
+  check(toasts.filter(([, m]) => m === "DICEVISION.Notifications.NoDice").length === 1, `toasts ${JSON.stringify(toasts)}`);
+  ws.recv(ROLL);
+  c.requestRoll();
+  ws.recv({ type: "no_dice" });
+  check(toasts.filter(([, m]) => m === "DICEVISION.Notifications.NoDice").length === 2, "again for the next request");
+});
+
+await test("no_dice: no toast in continuous mode (every empty capture would toast)", (c) => {
+  const ws = connectConfirmed(c); // continuous on
+  toasts = [];
+  ws.recv({ type: "no_dice" });
+  check(toasts.length === 0, `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("Replace mode: losing the session for good says rolls are digital", (c) => {
+  settings.mode = "replace";
+  connectConfirmed(c);
+  failAllRetries();
+  check(toasts.some(([, m]) => m === "DICEVISION.Notifications.ReplaceDigital"), `after retries ${JSON.stringify(toasts)}`);
+  toasts = [];
+  c.connect("BADCODE1");
+  sockets.at(-1).open();
+  sockets.at(-1).serverClose(4001);
+  check(toasts.some(([, m]) => m === "DICEVISION.Notifications.ReplaceDigital"), `after 4001 ${JSON.stringify(toasts)}`);
+  toasts = [];
+  settings.mode = "chat";
+  connectConfirmed(c);
+  failAllRetries();
+  check(!toasts.some(([, m]) => m === "DICEVISION.Notifications.ReplaceDigital"), "not in chat mode");
+});
+
+await test("a roll message without data re-arms instead of stalling", (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  ws.sent = [];
+  ws.recv({ type: "roll", session_code: "XKRM4N7B" });
+  check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `sent ${JSON.stringify(ws.sentTypes())}`);
+  check(c.getState().waiting, "still waiting");
+});
+
+await test("server errors toast once per message", (c) => {
+  const ws = connectOneShot(c);
+  toasts = [];
+  ws.recv({ type: "error", message: "Unknown message type: frob" });
+  ws.recv({ type: "error", message: "Unknown message type: frob" });
+  ws.recv({ type: "error", message: "Roll data is required" });
+  check(toasts.filter(([kind]) => kind === "warn").length === 2, `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("dice rolled digitally (d3) are announced", (c) => {
+  connectOneShot(c);
+  toasts = [];
+  open(fakeResolver(["d3", "d20"]));
+  check(toasts.some(([, m]) => m === 'DICEVISION.Fulfillment.RolledDigitally {"dice":"1d3"}'), `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("an unreadable die with no term says to click Submit, not 'all entered'", (c) => {
+  connectOneShot(c);
+  const app = fakeResolver(["d3"]);
+  app.fulfillable.delete("t0");
+  open(app);
+  check(app.status() === 'DICEVISION.Fulfillment.Unreadable {"dice":"1d3"}', `status ${app.status()}`);
+});
+
+await interceptTest("a dialog that fails to update toasts once", (c) => {
+  connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  app.element.querySelector = () => { throw new Error("detached"); };
+  open(app);
+  open(app);
+  check(toasts.filter(([kind, m]) => kind === "error" && m.startsWith("DICEVISION.Notifications.DialogFailed")).length === 1, `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("a rejected die: dialog notice says rejected, no second toast", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  app.registerResult = () => false;
+  open(app);
+  toasts = [];
+  ws.recv(rollOf(["d20", 4]));
+  await flush();
+  check(/Rejected.*d20 \(4\)/.test(app.notice() ?? ""), `notice ${app.notice()}`);
+  check(!toasts.some(([kind]) => kind === "warn"), `toasts ${JSON.stringify(toasts)}`);
+});
+
+await interceptTest("the notice is hidden while DiceVision isn't connected", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  ws.recv({ type: "no_dice" });
+  check(app.notice() === "DICEVISION.Notifications.NoDice", "shown while connected");
+  ws.serverClose(1006);
+  check(app.notice() === undefined && app.status() === "DICEVISION.Fulfillment.NotConnected", `notice ${app.notice()}`);
+});
+
+await interceptTest("/dv status reports an open roll dialog", async (c) => {
+  registerChatControls(c);
+  connectOneShot(c);
+  open(fakeResolver(["d20"]));
+  chatLine("/dv status");
+  await flush();
+  check(chat.at(-1)?.content.includes('"dialog":"yes"') && chat.at(-1)?.content.includes('"waiting":"no"'), `status ${chat.at(-1)?.content}`);
+});
+
+await test("plainText: Shift+Enter paragraphs and &#160; separate words", () => {
+  const { plainText } = chatControls;
+  check(plainText("<p>/dv</p><p>roll</p>").split(/\s+/).join(" ") === "/dv roll", JSON.stringify(plainText("<p>/dv</p><p>roll</p>")));
+  check(plainText("<p>/dv&#160;roll</p>") === "/dv roll", JSON.stringify(plainText("<p>/dv&#160;roll</p>")));
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);

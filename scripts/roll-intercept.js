@@ -6,8 +6,8 @@
  * Core > Dice Configuration), Foundry opens its RollResolver dialog and
  * pauses the roll. This module waits on the DiceVision bridge while such a
  * dialog has empty DiceVision slots, and fills them from the dice the
- * camera reads. Covers /roll and system rolls (e.g. dnd5e attacks and
- * damage), including extra dice for explode and reroll.
+ * camera reads. Designed to cover /roll and system rolls (e.g. dnd5e
+ * attacks and damage), including extra dice for explode and reroll.
  *
  * Digital fallback, so a camera problem never blocks a roll: the dialog's
  * Submit button rolls any still-empty slot digitally. Extra dice for
@@ -15,12 +15,14 @@
  * has its own arrow button that rolls it digitally.
  */
 
-import { matchDice, SUPPORTED_DICE } from "./dice-matching.js";
+import { matchDice, dropCarriedOver, SUPPORTED_DICE } from "./dice-matching.js";
 
 export const METHOD_ID = "dicevision";
 const STATUS_CLASS = "dicevision-status";
 const NOTICE_CLASS = "dicevision-status-notice";
 const DICEVISION_INPUTS = `label[data-method="${METHOD_ID}"] > input:not(:disabled)`;
+/** How long dice from the last roll count as still on the table */
+const CARRY_OVER_MS = 2 * 60 * 1000;
 
 /**
  * @param {import("./dicevision-client.js").DiceVisionClient} client
@@ -38,22 +40,44 @@ export function registerRollIntercept(client) {
   const observers = new WeakMap();
   /** @type {WeakMap<object, string>} Last mismatch notice per dialog */
   const notices = new WeakMap();
+  /** Dialogs we've already shown an update-error toast for */
+  const failed = new WeakSet();
+  /** The dice of the last roll a dialog used, and when */
+  let lastRoll = { dice: [], at: 0 };
+
+  /** Report a dialog update error once per dialog; the user can still Submit. */
+  const reportFailure = (app, err) => {
+    console.error("[DiceVision] Failed to update roll dialog:", err);
+    if (failed.has(app)) return;
+    failed.add(app);
+    ui.notifications.error(game.i18n.format("DICEVISION.Notifications.DialogFailed", { error: err.message }));
+  };
+
+  const renderAll = () => {
+    for (const app of resolvers) {
+      try {
+        renderStatus(app, client, notices.get(app));
+      } catch (err) {
+        reportFailure(app, err);
+      }
+    }
+  };
 
   /** Update every dialog, then register or release the bridge to match. */
   const refresh = () => {
-    try {
-      for (const app of resolvers) {
-        // One broken dialog mustn't stop the others, or the sync below
-        try {
-          rollUnsupportedDigitally(app);
-          renderStatus(app, client, notices.get(app));
-        } catch (err) {
-          console.error("[DiceVision] Failed to update roll dialog:", err);
+    for (const app of resolvers) {
+      // One broken dialog mustn't stop the others, or the sync below
+      try {
+        const digital = rollUnsupportedDigitally(app);
+        if (digital.length) {
+          ui.notifications.info(game.i18n.format("DICEVISION.Fulfillment.RolledDigitally", { dice: summarize(digital) }));
         }
+        renderStatus(app, client, notices.get(app));
+      } catch (err) {
+        reportFailure(app, err);
       }
-    } finally {
-      client.sync();
     }
+    client.sync();
   };
 
   client.addRollConsumer({
@@ -61,19 +85,28 @@ export function registerRollIntercept(client) {
     consume: (rollData) => {
       try {
         const slots = openSlots(resolvers);
-        const { fills, unused } = matchDice(rollData.dice, slots.map(s => s.denomination));
+        const needs = slots.map(s => s.denomination);
+        const previous = Date.now() - lastRoll.at < CARRY_OVER_MS ? lastRoll.dice : [];
+        const { dice, carried } = dropCarriedOver(rollData.dice, previous, needs);
+        if (carried.length) console.log("[DiceVision] Still on the table from the last roll, not used:", carried);
+        lastRoll = { dice: rollData.dice ?? [], at: Date.now() };
+
+        const { fills, unused } = matchDice(dice, needs);
+        const rejected = [];
         for (const { index, value } of fills) {
           const { app, denomination } = slots[index];
           if (!app.registerResult(METHOD_ID, denomination, value)) {
+            // Foundry already warns "... was not needed by the resolver"
             console.warn(`[DiceVision] Roll dialog rejected ${denomination} ${value}`);
-            unused.push({ type: denomination, value, reason: "not-needed" });
+            rejected.push({ type: denomination, value, reason: "rejected" });
           }
         }
 
-        const notice = !fills.length && !unused.length
-          ? game.i18n.localize("DICEVISION.Fulfillment.EmptyRoll")
-          : unused.length ? describeUnused(unused) : null;
-        if (notice) ui.notifications.warn(notice);
+        const nothing = !fills.length && !unused.length && !carried.length;
+        const notice = nothing ? game.i18n.localize("DICEVISION.Fulfillment.EmptyRoll")
+          : unused.length || rejected.length ? describeUnused([...unused, ...rejected]) : null;
+        // Rejected dice already got Foundry's own toast
+        if (nothing || unused.length) ui.notifications.warn(nothing ? notice : describeUnused(unused));
         for (const app of new Set(slots.map(s => s.app))) {
           if (notice) notices.set(app, notice);
           else notices.delete(app);
@@ -85,7 +118,7 @@ export function registerRollIntercept(client) {
     noDice: () => {
       const notice = game.i18n.localize("DICEVISION.Notifications.NoDice");
       for (const app of new Set(openSlots(resolvers).map(s => s.app))) notices.set(app, notice);
-      refresh();
+      renderAll();
     }
   });
 
@@ -115,8 +148,9 @@ export function registerRollIntercept(client) {
   // Replace mode makes DiceVision Foundry's default method. Keep it through
   // a reconnect, so a brief drop doesn't quietly turn rolls digital: the
   // dialog says DiceVision isn't connected and Submit rolls digitally. Only
-  // an explicit disconnect, giving up on reconnecting, or leaving Replace
-  // mode hands rolls back, to whatever method was the default before.
+  // an explicit disconnect, an invalid session, giving up on reconnecting,
+  // or leaving Replace mode hands rolls back, to whatever method was the
+  // default before.
   let previousDefault = null;
   const applyDefaultMethod = (state) => {
     const fulfillment = CONFIG.Dice.fulfillment;
@@ -128,13 +162,7 @@ export function registerRollIntercept(client) {
       fulfillment.defaultMethod = previousDefault ?? "";
       previousDefault = null;
     }
-    for (const app of resolvers) {
-      try {
-        renderStatus(app, client, notices.get(app));
-      } catch (err) {
-        console.error("[DiceVision] Failed to update roll dialog:", err);
-      }
-    }
+    renderAll();
   };
   Hooks.on("dicevision.stateChanged", applyDefaultMethod);
   applyDefaultMethod(client.getState());
@@ -148,7 +176,8 @@ export function diceConfigUsesDiceVision() {
   try {
     const setting = foundry.dice.Roll.DICE_CONFIGURATION_SETTING;
     return Object.values(game.settings.get("core", setting) ?? {}).includes(METHOD_ID);
-  } catch {
+  } catch (err) {
+    console.warn("[DiceVision] Couldn't read Core Dice Configuration:", err);
     return false;
   }
 }
@@ -170,22 +199,32 @@ function openSlots(resolvers) {
   })));
 }
 
+/** Empty, enabled DiceVision inputs for dice the camera can't read. */
+function unreadableInputs(app) {
+  if (!app.rendered || !app.element) return [];
+  return [...app.element.querySelectorAll(DICEVISION_INPUTS)]
+    .filter(input => input.value === "" && !(input.parentElement.dataset.denomination in SUPPORTED_DICE));
+}
+
 /**
  * The camera can't read dice like d3, d2 or coins: roll those digitally
  * instead of leaving the dialog waiting for them.
+ * @returns {string[]} Denominations rolled digitally
  */
 function rollUnsupportedDigitally(app) {
-  if (!app.rendered || !app.element) return;
-  for (const input of app.element.querySelectorAll(DICEVISION_INPUTS)) {
+  const rolled = [];
+  for (const input of unreadableInputs(app)) {
     const denomination = input.parentElement.dataset.denomination;
-    if (input.value !== "" || denomination in SUPPORTED_DICE) continue;
     const term = app.fulfillable?.get(input.name)?.term;
     if (!term) {
       console.warn(`[DiceVision] No dice term for ${denomination} input "${input.name}"; leaving it to Submit`);
-    } else if (!app.registerResult(METHOD_ID, denomination, term.randomFace())) {
+    } else if (app.registerResult(METHOD_ID, denomination, term.randomFace())) {
+      rolled.push(denomination);
+    } else {
       console.warn(`[DiceVision] Roll dialog rejected a digital ${denomination}`);
     }
   }
+  return rolled;
 }
 
 /** Show what the dialog is waiting for at the top of it. */
@@ -209,18 +248,23 @@ function renderStatus(app, client, notice) {
   }
 
   const waiting = cameraInputs(app).map(input => input.parentElement.dataset.denomination);
+  // Unreadable dice we couldn't roll digitally (no term): only Submit helps
+  const stuck = unreadableInputs(app).map(input => input.parentElement.dataset.denomination);
   // After the first pass (explode, reroll) Submit stays disabled; each extra
   // die has its own arrow button instead
   const extraDice = !!form.querySelector('button[type="submit"]')?.disabled;
   const fallback = extraDice ? "Extra" : "";
-  const text = !client.isConnected() ? game.i18n.localize(`DICEVISION.Fulfillment.NotConnected${fallback}`)
+  const connected = client.isConnected();
+  const text = !connected ? game.i18n.localize(`DICEVISION.Fulfillment.NotConnected${fallback}`)
     : waiting.length ? game.i18n.format(`DICEVISION.Fulfillment.Waiting${fallback}`, { dice: summarize(waiting) })
+    : stuck.length ? game.i18n.format(`DICEVISION.Fulfillment.Unreadable${fallback}`, { dice: summarize(stuck) })
     : game.i18n.localize("DICEVISION.Fulfillment.Done");
   if (status.textContent !== text) status.textContent = text;
-  status.classList.toggle("dicevision-waiting", client.isConnected() && waiting.length > 0);
+  status.classList.toggle("dicevision-waiting", connected && waiting.length > 0);
 
   let warning = form.querySelector(`.${NOTICE_CLASS}`);
-  if (notice && waiting.length) {
+  // A "roll again" notice makes no sense while DiceVision isn't connected
+  if (notice && waiting.length && connected) {
     if (!warning) {
       warning = document.createElement("p");
       warning.className = NOTICE_CLASS;
@@ -249,7 +293,8 @@ export function describeUnused(unused) {
   const messages = {
     "not-needed": "DICEVISION.Fulfillment.NotNeeded",
     "out-of-range": "DICEVISION.Fulfillment.OutOfRange",
-    "missing-pair": "DICEVISION.Fulfillment.MissingPair"
+    "missing-pair": "DICEVISION.Fulfillment.MissingPair",
+    rejected: "DICEVISION.Fulfillment.Rejected"
   };
   return Object.entries(messages)
     .map(([reason, key]) => [describe(reason), key])

@@ -36,21 +36,21 @@ To install a specific pre-release, use its tag's URL instead, e.g. `https://gith
 Every Foundry roll waits for your physical dice while DiceVision is connected. That includes `/roll` and system rolls, such as dnd5e rolls with advantage.
 
 - **Roll all the dice at once, in any order.** They're matched by type, so for `2d20kh + 1d6` roll two d20s and a d6 together.
-- **Missing dice:** the dialog fills what it can and waits for the rest. You can roll the missing dice separately.
+- **Missing dice:** the dialog fills what it can and waits for the rest. You can roll just the missing dice and leave the others where they are: dice still showing the same value as last time are recognised as already used.
 - **Wrong or extra dice** are ignored, with a warning in the dialog. Roll again.
 - **No dice detected:** the dialog says so and keeps waiting. Roll again in view of the camera.
 - **Percentile:** roll two d10s (a tens die and a units die) for a d100. 00 + 0 is 100. A d10 showing 0 counts as 10.
 - **Exploding dice and rerolls** ask for another die.
 - **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally. For an extra die from an explosion or reroll, click the arrow next to it.
-- Dice the camera can't read (d2, d3, coins) are rolled digitally.
-- **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, or once reconnecting gives up, Foundry rolls digitally as usual.
+- Dice the camera can't read (d2, d3, coins) are rolled digitally, and a notice says so.
+- **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, an invalid session code, or once reconnecting gives up, Foundry rolls digitally as usual, and a warning says so.
 - Blind `/roll`s are rolled digitally by Foundry.
 
-To use physical dice only for some die types (say, d20s), set Operating Mode to **Off** and choose **DiceVision** for those dice in **Core › Dice Configuration**. DiceVision still connects automatically. Those dice open the dialog even while DiceVision is disconnected; click Submit to roll them digitally. A **Default** method set in Dice Configuration overrides Replace mode for every die.
+To use physical dice only for some die types (say, d20s), set Operating Mode to **Off** and choose **DiceVision** for those dice in **Core › Dice Configuration**. DiceVision still connects (with Auto-Connect on). Those dice open the dialog even while DiceVision is disconnected; click Submit to roll them digitally. A **Default** method set in Dice Configuration overrides Replace mode for every die.
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons appear above the chat message-mode buttons, in Chat and Replace mode (in Replace mode, a Foundry roll waiting for dice takes the roll first):
+Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
 
 | Button | What it does |
 |--------|--------------|
@@ -60,6 +60,8 @@ Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons
 By default the module asks for **one roll at a time**. While Foundry is waiting, the DiceVision dashboard switches to continuous capture (if its **Send automatically** option is on, the default); once the roll arrives it goes back to normal.
 
 With **continuous mode** on, every roll is posted to chat and the dashboard stays in continuous capture until you turn it off.
+
+If the camera sees no dice for a one-off request, a "no dice detected" warning appears (not in continuous mode, where any empty capture would trigger it).
 
 ### Chat commands
 
@@ -71,7 +73,7 @@ With **continuous mode** on, every roll is posted to chat and the dashboard stay
 | `/dv mode off\|chat\|replace` | Set the operating mode |
 | `/dv connect <code>` | Save a session code and connect (or reconnect) |
 | `/dv disconnect` | Disconnect |
-| `/dv status` | Show connection and waiting status |
+| `/dv status` | Show connection status, and whether a chat roll or a roll dialog is waiting |
 
 Command replies are only visible to you.
 
@@ -83,7 +85,7 @@ Each user who rolls physical dice needs their **own** session code. If two Found
 |---------|-------------|
 | **Session Code** | 8-character code from DiceVision Settings |
 | **Operating Mode** | `Off`, `Chat` (post physical rolls to chat) or `Replace` (physical dice for Foundry's rolls) |
-| **Continuous Mode** | Chat mode: post every roll and keep the dashboard capturing (default off: one roll per request) |
+| **Continuous Mode** | Chat and Replace mode: post every roll to chat (a roll a Foundry roll dialog is waiting for goes to the dialog) and keep the dashboard capturing (default off: one roll per request) |
 | **Auto-Connect** | Connect automatically when the world loads |
 | **Chat Visibility** | Who sees roll messages: Everyone, GM Only, or Only Me |
 | **Roll Label** | Label shown on roll messages (default: "DiceVision") |
@@ -92,7 +94,7 @@ Each user who rolls physical dice needs their **own** session code. If two Found
 
 1. DiceVision's camera detects physical dice using a YOLO + CNN/Embedding AI pipeline
 2. Results are sent to the DiceVision backend
-3. When Foundry needs dice (Replace mode) or you request a roll (Chat mode), this module tells the backend it is waiting; DiceVision only forwards a roll when an app is waiting
+3. When Foundry needs dice (a roll dialog) or you request a roll (dice button, continuous mode), this module tells the backend it is waiting; DiceVision only forwards a roll when an app is waiting
 4. The backend sends the roll over WebSocket. Replace mode enters the dice in Foundry's roll dialog through Foundry's dice fulfillment API; Chat mode posts them to chat. The module then tells the backend it's done, or keeps waiting if dice are still missing or continuous mode is on
 
 ## API
@@ -105,10 +107,11 @@ const api = game.modules.get("dicevision").api;
 api.connect("XKRM-4N7B");  // Connect to a session
 api.disconnect();       // Disconnect
 api.isConnected();      // Check connection status
-api.requestRoll();      // Post the next physical roll (Chat mode)
+api.requestRoll();      // Post the next physical roll to chat (Chat or Replace mode)
 api.cancelRequest();    // Cancel a pending request
 api.setContinuous(true);
-api.getState();         // { connected, sessionCode, mode, continuous, waiting }
+api.getState();         // { connected, sessionActive, sessionCode, mode, continuous, waiting, dialogWaiting }
+                        // waiting: a chat roll is requested; dialogWaiting: a roll dialog waits for dice
 ```
 
 ## License

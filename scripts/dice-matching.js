@@ -89,3 +89,50 @@ export function matchDice(dice, needs) {
 function inRange(value, faces) {
   return Number.isInteger(value) && value >= 1 && value <= faces;
 }
+
+/**
+ * Leave out dice still on the table from the previous roll. The camera reads
+ * everything in view, so after a partial fill ("roll the missing d20") the
+ * die that was already used comes back too, and would fill the empty slot in
+ * place of the new one.
+ *
+ * Only a surplus is dropped: per die type, at most (dice read - dice needed),
+ * and only dice whose value matches one from the previous roll. A full
+ * re-roll that happens to repeat a value still counts. Carried dice aren't
+ * reported as unused, so the attack's d20 left in view doesn't warn during
+ * the damage roll.
+ *
+ * @param {PhysicalDie[]} dice       What the camera read now
+ * @param {PhysicalDie[]} previous   What it read last time (empty if none)
+ * @param {string[]} needs           One denomination per open slot
+ * @returns {{dice: PhysicalDie[], carried: PhysicalDie[]}}
+ *   dice: the ones to match; carried: left out as still on the table
+ */
+export function dropCarriedOver(dice, previous, needs) {
+  const norm = d => ({ ...d, type: String(d.type).toLowerCase(), value: Number(d.value) });
+  const current = (dice ?? []).map(norm);
+  const seen = (previous ?? []).map(norm);
+  // A d100 slot takes two d10s (tens + units)
+  const needed = {};
+  for (const n of needs) {
+    if (n === "d100") needed.d10 = (needed.d10 ?? 0) + 2;
+    else needed[n] = (needed[n] ?? 0) + 1;
+  }
+
+  const carried = [];
+  for (const type of new Set(current.map(d => d.type))) {
+    // A type the roll doesn't need at all is all surplus (e.g. the attack's
+    // d20 still in view during the damage roll)
+    let surplus = current.filter(d => d.type === type).length - (needed[type] ?? 0);
+    for (let i = 0; surplus > 0 && i < current.length; i++) {
+      const die = current[i];
+      if (die.type !== type) continue;
+      const match = seen.findIndex(s => s.type === die.type && s.value === die.value);
+      if (match < 0) continue;
+      seen.splice(match, 1);
+      carried.push(...current.splice(i--, 1));
+      surplus--;
+    }
+  }
+  return { dice: current, carried };
+}

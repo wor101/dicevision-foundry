@@ -50,6 +50,11 @@ Hooks.once("ready", () => {
   const autoConnect = game.settings.get(MODULE_ID, "autoConnect");
   const mode = game.settings.get(MODULE_ID, "mode");
 
+  // Replace mode with nothing to connect to: rolls stay digital, say so
+  if (mode === "replace" && !(sessionCode && autoConnect)) {
+    ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ReplaceNotConnected"));
+  }
+
   if (sessionCode && autoConnect) {
     diceVisionClient.connect(sessionCode);
 
