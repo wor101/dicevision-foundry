@@ -2,9 +2,9 @@
 
 ## Overview
 
-This repository contains a Foundry VTT module that connects to DiceVision's WebSocket bridge and posts physical dice roll results to Foundry's chat.
+This repository contains a Foundry VTT module that connects to DiceVision's WebSocket bridge. It either fills Foundry's own dice rolls with physical dice (Replace mode) or posts physical rolls to chat (Chat mode).
 
-**Status:** Phase 1 (Chat Mode) works on Foundry v14 (tested locally against the live bridge; see Local End-to-End Testing). It was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
+**Status:** Chat mode is released (v0.1.1) and tested on The Forge. Replace mode works on Foundry v14 with dnd5e 6 (tested locally against the live bridge; see Local End-to-End Testing). The module was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
 
 ## Architecture
 
@@ -16,15 +16,26 @@ DiceVision Camera → Backend → WebSocket Bridge → This Module → ChatMessa
 The module:
 1. Connects to `wss://dicevision.dirtyowlbear.com/api/bridge/{session_code}`
 2. Receives `roll` messages with dice data
-3. Groups dice by type and renders `templates/chat-message.hbs`
-4. Creates a `ChatMessage` (public, GM-whisper, or self-whisper per settings)
+3. Replace mode: fills the open roll dialog (see below). Chat mode: groups dice by type, renders `templates/chat-message.hbs` and creates a `ChatMessage` (public, GM-whisper, or self-whisper per settings)
 
-## Phases
+## Modes
 
-| Phase | Mode | Description |
-|-------|------|-------------|
-| 1 | Chat | Rolls appear as chat messages |
-| 2 | Replace (planned) | Foundry's Dice Fulfillment API waits for a physical die on `/roll` — `waitForResult()` in `dicevision-client.js` is scaffolded for this but unused |
+| Mode | Description |
+|------|-------------|
+| Off | Nothing intercepted or posted |
+| Chat | Physical rolls appear as chat messages (dice button / `/dv roll`, or continuous mode) |
+| Replace | Foundry's own rolls (`/roll`, system rolls like dnd5e attacks) wait for physical dice |
+
+### Replace mode (`roll-intercept.js`, `dice-matching.js`)
+
+Built on Foundry's dice fulfillment API (v12+), not a `/roll` patch, so it covers every `Roll.evaluate()`. Modeled on the Codex mod's `buildForcedDice`, with one difference: a partial match is fine here.
+- Registers `CONFIG.Dice.fulfillment.methods.dicevision` (`interactive: true`). In Replace mode **while connected**, sets `CONFIG.Dice.fulfillment.defaultMethod = "dicevision"`, so every die type uses it unless Core › Dice Configuration picks another method for that die. Disconnected → `""` again, so rolls are digital and no dialog opens. Another module's `defaultMethod` is left alone.
+- Foundry then opens its own `RollResolver` dialog and pauses the roll. The module tracks open dialogs via the `renderRollResolver`/`closeRollResolver` hooks and is a roll consumer (`client.addRollConsumer`): it wants a roll while any dialog has an empty, enabled `label[data-method="dicevision"] > input`. Each roll is matched with `matchDice()` and entered with `app.registerResult()`, which auto-submits once everything is filled. Rolls a consumer takes are never posted to chat.
+- Matching: by die type, any order. A d10 showing 0 counts as 10. For a d100 slot, a percentile pair is a tens die (0/"00", 10..90) plus a units die (0..9), with 00 + 0 = 100. The bridge sends "00" and "0" both as 0. Out-of-range or extra dice are not used: a warning toast plus a notice in the dialog, and the dialog keeps waiting.
+- Explode/reroll add inputs without a re-render; a `MutationObserver` (new inputs only, to avoid reacting to our own status text) triggers a re-check.
+- Dice the camera can't read (anything not in `SUPPORTED_DICE`, e.g. d3, coins) are rolled digitally straight away.
+- The dialog's own **Submit** rolls whatever is still empty digitally, then closes, which releases the bridge. That's the fallback for a camera problem.
+- Foundry skips interactive fulfillment for blind rolls and for `allowInteractive: false` evaluations; those stay digital.
 
 ## Reference Links
 
@@ -50,7 +61,9 @@ dicevision-foundry/
 ├── module.json               # Foundry manifest (id: "dicevision")
 ├── scripts/
 │   ├── module.js             # Entry point: init/ready hooks, public API
-│   ├── dicevision-client.js  # WebSocket client singleton, reconnect, roll callbacks
+│   ├── dicevision-client.js  # WebSocket client singleton, reconnect, roll consumers
+│   ├── roll-intercept.js     # Replace mode: fulfillment method + RollResolver integration
+│   ├── dice-matching.js      # Pure: physical dice → open roll slots
 │   ├── dice-bridge.js        # Roll data → ChatMessage
 │   ├── chat-controls.js      # Chat sidebar buttons + /dv commands
 │   └── settings.js           # game.settings registration (all client-scoped)
@@ -100,15 +113,16 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 ### Messages Sent (Client → Server)
 
 ```javascript
-{ "type": "waiting", "app_id": "foundry" }   // A roll is wanted: requestRoll(), continuous mode, or waitForResult()
+{ "type": "waiting", "app_id": "foundry" }   // A roll is wanted: requestRoll(), continuous mode, or an open roll dialog
 { "type": "cancel", "app_id": "foundry" }    // No roll wanted any more (only if we sent "waiting")
 { "type": "ping" }                            // Keep-alive, every 30s
 ```
 
 **The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`.
 
-**While an app is waiting, the dashboard switches to continuous capture** (`bridgeTriggeredMode` in the dashboard's `useVTTIntegration`, on by default via its "Send automatically" toggle). So the module only registers when it actually wants a roll (`_shouldWait()`):
-- **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. When that roll arrives, the module sends `cancel` (unless a `waitForResult()` is still pending) so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
+**While an app is waiting, the dashboard switches to continuous capture** (`bridgeTriggeredMode` in the dashboard's `useVTTIntegration`, on by default via its "Send automatically" toggle). So the module only registers when it actually wants a roll (`_shouldWait()`), and `_syncWaiting()` doesn't resend `waiting` while `registered`:
+- **Replace mode:** a roll dialog with empty DiceVision slots sends `waiting`. After each roll it re-sends `waiting` if slots are still empty, otherwise `cancel`. Closing the dialog (Submit) sends `cancel`.
+- **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. When that roll arrives, the module sends `cancel` (unless a roll dialog still wants dice) so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
 - **Continuous mode on:** re-sends `waiting` after every roll, which keeps the dashboard capturing.
 - Rolls nobody in Foundry asked for (another app on the same session was waiting) are ignored.
 
@@ -151,8 +165,10 @@ game.modules.get("dicevision").api.connect("XKRM4N7B");
 A local Foundry server plus a fake dashboard lets you test against the live bridge without a camera:
 
 - **Foundry** (Node.js build, licensed): v14 needs Node 24. Start it with `--noupnp`, since UPnP is on by default and asks the router to expose the port. Symlink this repo to `<dataPath>/Data/modules/dicevision`, so edits apply on a page reload. A world can be created with `POST /create {action: "createWorld", id, title, system}` (admin session), then launched with `POST /setup {action: "launchWorld", world}`.
-- **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`) and stops after `--max N` rolls. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
-- **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world as `Gamemaster` (the world also has a `Player` user for manual two-user tests; neither has a password). It checks the dice button, continuous mode and `/dv` commands. `scripts-dev/e2e/foundry.mjs` documents its env vars; `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
+- **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`; fixed values `d20=17`; a different roll each time `"d20=12;d6=2"`) and stops after `--max N` rolls. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
+- **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world as `Gamemaster` (the world also has a `Player` user for manual two-user tests; neither has a password). It checks the dice button, continuous mode and `/dv` commands.
+- **`scripts-dev/e2e/replace.mjs CODE`**: Replace mode end to end: mixed dice in one roll, partial rolls, wrong dice, exploding dice, percentile, a dnd5e advantage `D20Roll`, Submit as digital fallback, and digital rolls while disconnected. Set `FOUNDRY_USER=Player` if someone is logged in as the GM (Foundry allows one session per user).
+- `scripts-dev/e2e/foundry.mjs` documents the env vars; `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
 
 ## Testing Checklist
 
@@ -162,6 +178,10 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Connect with valid session code (with and without dash)
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → rolls ignored; mode `chat` → rolls appear in chat
+- [ ] Replace: `/roll 2d20kh+1d6+3` opens the dialog, fills from one physical roll, posts the right total, then `cancel`
+- [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally
+- [ ] Replace: dnd5e attack, damage and save rolls from a character sheet
+- [ ] Replace while disconnected: rolls are digital, no dialog
 - [ ] Chat visibility: Everyone / GM Only / Only Me
 - [ ] Changing session code in settings reconnects
 - [ ] Auto-reconnect after connection drop

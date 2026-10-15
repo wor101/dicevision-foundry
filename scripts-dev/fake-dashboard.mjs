@@ -6,7 +6,10 @@
 //   node scripts-dev/fake-dashboard.mjs XKRM-4N7B --dice 1d20,2d6 --max 3
 //
 // Options:
-//   --dice SPEC   Dice to "roll", e.g. 1d20 or 1d20,2d6 (default 1d20)
+//   --dice SPEC   Dice to "roll", e.g. 1d20 or 1d20,2d6 (default 1d20).
+//                 Fix a value with =: d20=17 or 2d6=3. Separate rolls with ;
+//                 to send different dice each time (the last spec repeats):
+//                 "d20=12;d6=2" sends a d20 of 12, then a d6 of 2.
 //   --max N       Stop after sending N rolls (default 1; 0 = unlimited)
 //   --delay MS    Wait before answering a request (default 500)
 //   --watch S     After the last roll, keep listening S seconds to see whether
@@ -54,22 +57,25 @@ const watchS = numberOpt('watch', '3');
 
 const log = (event, extra = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), event, ...extra }));
 
+const rollSpecs = diceSpec.split(';');
+
 function rollDice(spec) {
   const dice = [];
   for (const part of spec.split(',')) {
-    const m = /^(\d*)d(\d+|%)$/i.exec(part.trim());
+    const m = /^(\d*)d(\d+|%)(?:=(\d+))?$/i.exec(part.trim());
     if (!m) throw new Error(`bad dice spec: ${part}`);
     const count = Number(m[1] || 1);
     const sides = m[2] === '%' ? 100 : Number(m[2]);
     for (let i = 0; i < count; i++) {
-      dice.push({ type: sides === 100 ? 'd100' : `d${sides}`, value: 1 + Math.floor(Math.random() * sides) });
+      const value = m[3] !== undefined ? Number(m[3]) : 1 + Math.floor(Math.random() * sides);
+      dice.push({ type: sides === 100 ? 'd100' : `d${sides}`, value });
     }
   }
   return dice;
 }
 
 try {
-  rollDice(diceSpec); // fail on a bad spec now, not mid-test
+  rollSpecs.forEach(rollDice); // fail on a bad spec now, not mid-test
 } catch (err) {
   usageError(err.message);
 }
@@ -93,7 +99,7 @@ function maybeRoll(reason) {
   pending = setTimeout(() => {
     pending = null;
     if (waitingApps.size === 0) return;
-    const dice = rollDice(diceSpec);
+    const dice = rollDice(rollSpecs[Math.min(sent, rollSpecs.length - 1)]);
     const total = dice.reduce((s, d) => s + d.value, 0);
     const roll_id = crypto.randomUUID();
     ws.send(JSON.stringify({ type: 'roll', data: { dice, total, roll_id } }));

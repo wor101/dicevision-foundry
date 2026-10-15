@@ -3,12 +3,13 @@
   "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM-4N7B). Create one at dicevision.dirtyowlbear.com",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
-  "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry.",
+  "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry. Replace: every roll (/roll, character sheets) waits for your physical dice while connected; Core \u203a Dice Configuration can still set individual die types to another method.",
   "DICEVISION.Settings.Mode.Off": "Off",
   "DICEVISION.Settings.Mode.Chat": "Chat \u2014 Display rolls in chat",
+  "DICEVISION.Settings.Mode.Replace": "Replace \u2014 Use physical dice for Foundry rolls",
 
   "DICEVISION.Settings.Continuous.Name": "Continuous Mode",
-  "DICEVISION.Settings.Continuous.Hint": "Post every physical roll to chat. Keeps the DiceVision dashboard capturing continuously. When off, use the dice button by the chat box (or /dv roll) to ask for one roll at a time.",
+  "DICEVISION.Settings.Continuous.Hint": "Chat mode only. Post every physical roll to chat. Keeps the DiceVision dashboard capturing continuously. When off, use the dice button by the chat box (or /dv roll) to ask for one roll at a time.",
 
   "DICEVISION.Settings.AutoConnect.Name": "Auto-Connect",
   "DICEVISION.Settings.AutoConnect.Hint": "Automatically connect to DiceVision when the world loads.",
@@ -22,16 +23,14 @@
   "DICEVISION.Settings.RollLabel.Name": "Roll Label",
   "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
 
-  "DICEVISION.Settings.Timeout.Name": "Roll Timeout (seconds)",
-  "DICEVISION.Settings.Timeout.Hint": "Seconds to wait for a physical roll. Reserved for the planned Replace mode; not used in Chat mode.",
-
   "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
   "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",
   "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
   "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in module settings.",
   "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
-  "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change it to Chat in module settings (or /dv mode chat) to see rolls.",
+  "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Change it to Replace or Chat in module settings (or /dv mode replace) to use physical dice.",
+  "DICEVISION.Notifications.ReplaceMode": "DiceVision: in Replace mode, just roll in Foundry (e.g. /roll 1d20 or a character sheet) and it will wait for your physical dice.",
   "DICEVISION.Notifications.NotConnected": "DiceVision: Not connected. Check your session code in module settings, or use /dv connect <code>.",
   "DICEVISION.Notifications.ConnectFailed": "DiceVision: Could not connect ({error}). Check your session code.",
   "DICEVISION.Notifications.CommandFailed": "DiceVision: {command} failed ({error}). See the console for details.",
@@ -44,7 +43,7 @@
   "DICEVISION.Controls.ContinuousOn": "DiceVision continuous mode: on",
   "DICEVISION.Controls.ContinuousOff": "DiceVision continuous mode: off",
 
-  "DICEVISION.Commands.Help": "<b>DiceVision commands</b><br>/dv roll \u2014 post your next physical roll<br>/dv cancel \u2014 cancel a pending roll<br>/dv continuous [on|off] \u2014 post every roll<br>/dv mode off|chat<br>/dv connect &lt;code&gt;<br>/dv disconnect<br>/dv status",
+  "DICEVISION.Commands.Help": "<b>DiceVision commands</b><br>/dv roll \u2014 post your next physical roll<br>/dv cancel \u2014 cancel a pending roll<br>/dv continuous [on|off] \u2014 post every roll<br>/dv mode off|chat|replace<br>/dv connect &lt;code&gt;<br>/dv disconnect<br>/dv status",
   "DICEVISION.Commands.NothingToCancel": "DiceVision: no roll request to cancel.",
   "DICEVISION.Commands.InvalidCode": "DiceVision: \"{code}\" isn't a session code. Codes are 8 letters or digits, e.g. XKRM-4N7B.",
   "DICEVISION.Commands.ModeSet": "DiceVision mode: {mode}",
@@ -52,6 +51,13 @@
   "DICEVISION.Commands.AlreadyDisconnected": "DiceVision: not connected.",
   "DICEVISION.Commands.Connected": "connected",
   "DICEVISION.Commands.NotConnected": "not connected",
+
+  "DICEVISION.Fulfillment.Label": "DiceVision (physical dice)",
+  "DICEVISION.Fulfillment.Waiting": "DiceVision: roll {dice} in front of your camera. Submit rolls the rest digitally.",
+  "DICEVISION.Fulfillment.Done": "DiceVision: all physical dice received.",
+  "DICEVISION.Fulfillment.NotConnected": "DiceVision is not connected. Click Submit to roll digitally.",
+  "DICEVISION.Fulfillment.NotNeeded": "Not needed for this roll: {dice}.",
+  "DICEVISION.Fulfillment.OutOfRange": "Out of range, roll again: {dice}.",
 
   "DICEVISION.Chat.Total": "Total",
   "DICEVISION.Chat.RollReceived": "Roll received via DiceVision"

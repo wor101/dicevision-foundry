@@ -125,7 +125,7 @@ async function handleCommand(client, [sub = "help", arg]) {
     }
 
     case "mode":
-      if (!["off", "chat"].includes(arg?.toLowerCase())) return reply("DICEVISION.Commands.Help");
+      if (!["off", "chat", "replace"].includes(arg?.toLowerCase())) return reply("DICEVISION.Commands.Help");
       await game.settings.set(MODULE_ID, "mode", arg.toLowerCase());
       await reply("DICEVISION.Commands.ModeSet", { mode: arg.toLowerCase() });
       break;

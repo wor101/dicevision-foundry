@@ -25,7 +25,8 @@ export class DiceVisionClient {
     this.pingInterval = null;
     this.reconnectTimeout = null;
     this.reconnectAttempts = 0;
-    this.rollCallbacks = [];
+    // Roll dialogs waiting for physical dice (see roll-intercept.js)
+    this.rollConsumers = new Set();
     // A one-off chat roll requested via requestRoll() (continuous mode off)
     this.pendingChatRoll = false;
     // Whether the bridge currently has us registered as waiting
@@ -119,7 +120,6 @@ export class DiceVisionClient {
           );
           this.sessionCode = null;
           this.pendingChatRoll = false;
-          this._cancelRollCallbacks();
           this._notifyState();
           return;
         }
@@ -156,7 +156,6 @@ export class DiceVisionClient {
 
     this.reconnectAttempts = 0;
     this.pendingChatRoll = false;
-    this._cancelRollCallbacks();
     this._notifyState();
   }
 
@@ -195,14 +194,43 @@ export class DiceVisionClient {
    * is actually wanted.
    */
   _shouldWait() {
-    return this._wantsChatRoll() || this.rollCallbacks.length > 0;
+    return this._wantsChatRoll() || this._consumerWantsRoll();
+  }
+
+  _consumerWantsRoll() {
+    return [...this.rollConsumers].some(consumer => consumer.wantsRoll());
+  }
+
+  /**
+   * Register a roll consumer: an object with wantsRoll() (whether it needs
+   * dice right now) and consume(rollData). While any consumer wants a roll,
+   * rolls go to it instead of chat. Call sync() whenever wantsRoll() may
+   * have changed.
+   * @param {{wantsRoll: () => boolean, consume: (rollData: object) => void}} consumer
+   * @returns {() => void} Unregisters the consumer
+   */
+  addRollConsumer(consumer) {
+    this.rollConsumers.add(consumer);
+    this.sync();
+    return () => {
+      this.rollConsumers.delete(consumer);
+      this.sync();
+    };
+  }
+
+  /** Re-check whether we should be waiting and tell the UI. */
+  sync() {
+    this._syncWaiting();
+    this._notifyState();
   }
 
   /** Register or release our waiting state to match _shouldWait(). */
   _syncWaiting() {
     if (!this.isConnected()) return;
     if (this._shouldWait()) {
-      this.sendWaiting();
+      // Already registered means the dashboard is waiting: only a roll
+      // (_onRollReceived re-arms) or a "cancelled" clears that.
+      if (!this.registered) this.sendWaiting();
     } else if (this.registered) {
       // The dashboard treats any "cancelled" as nobody waiting, whatever its
       // app, so never send one we don't need. Even this one clears the request
@@ -217,7 +245,12 @@ export class DiceVisionClient {
    * @returns {boolean} Whether a roll is now being waited for
    */
   requestRoll() {
-    if (game.settings.get(MODULE_ID, "mode") !== "chat") {
+    const mode = game.settings.get(MODULE_ID, "mode");
+    if (mode === "replace") {
+      ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.ReplaceMode"));
+      return false;
+    }
+    if (mode !== "chat") {
       ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ModeOff"));
       return false;
     }
@@ -335,11 +368,18 @@ export class DiceVisionClient {
 
     console.log("[DiceVision] Roll received:", rollData);
 
-    const postToChat = this._wantsChatRoll();
-    this.pendingChatRoll = false;
+    // A roll dialog waiting for dice takes the roll; otherwise chat mode may
+    const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
+    const postToChat = !consumer && this._wantsChatRoll();
+    if (postToChat) this.pendingChatRoll = false;
 
-    // Resolve any pending waitForResult callbacks (Phase 2)
-    this._resolveRollCallbacks(rollData);
+    if (consumer) {
+      try {
+        consumer.consume(rollData);
+      } catch (err) {
+        console.error("[DiceVision] Failed to apply roll:", err);
+      }
+    }
 
     // The dashboard dropped its waiting flag when it sent this roll. Re-arm it
     // if we want another roll, else release the bridge so a reloaded
@@ -352,8 +392,8 @@ export class DiceVisionClient {
     this._notifyState();
 
     if (!postToChat) {
-      // Mode off, or another app on this session asked for the roll
-      console.log("[DiceVision] No chat roll requested, ignoring roll");
+      // Used by a roll dialog, mode off, or another app on this session asked for it
+      if (!consumer) console.log("[DiceVision] No roll requested, ignoring roll");
       return;
     }
 
@@ -377,68 +417,6 @@ export class DiceVisionClient {
     const sent = this._send({ type: "cancel", app_id: APP_ID });
     if (sent) this.registered = false;
     return sent;
-  }
-
-  /**
-   * Wait for a specific die result (Phase 2 — Dice Fulfillment API).
-   * @param {string} denomination - Die type to match (e.g., "d20")
-   * @param {number} [timeoutMs] - Timeout in milliseconds
-   * @returns {Promise<number|null>} The die value, or null on timeout, disconnect,
-   *   invalid session, or exhausted reconnects
-   */
-  waitForResult(denomination, timeoutMs) {
-    const timeout = timeoutMs || game.settings.get(MODULE_ID, "timeout") * 1000;
-
-    return new Promise((resolve) => {
-      const callback = {
-        denomination,
-        resolve,
-        timer: setTimeout(() => {
-          const idx = this.rollCallbacks.indexOf(callback);
-          if (idx > -1) this.rollCallbacks.splice(idx, 1);
-          resolve(null);
-          this._syncWaiting();
-        }, timeout)
-      };
-
-      this.rollCallbacks.push(callback);
-      this.sendWaiting();
-    });
-  }
-
-  /**
-   * Resolve pending roll callbacks when a roll arrives.
-   * @param {object} rollData - The received roll data
-   */
-  _resolveRollCallbacks(rollData) {
-    if (!this.rollCallbacks.length || !rollData?.dice) return;
-
-    const availableDice = [...rollData.dice];
-    const toRemove = [];
-
-    for (const cb of this.rollCallbacks) {
-      const matchIdx = availableDice.findIndex(d => d.type === cb.denomination);
-      if (matchIdx > -1) {
-        const die = availableDice.splice(matchIdx, 1)[0];
-        clearTimeout(cb.timer);
-        cb.resolve(die.value);
-        toRemove.push(cb);
-      }
-    }
-
-    for (const cb of toRemove) {
-      const idx = this.rollCallbacks.indexOf(cb);
-      if (idx > -1) this.rollCallbacks.splice(idx, 1);
-    }
-  }
-
-  /** Resolve all pending waitForResult callbacks with null. */
-  _cancelRollCallbacks() {
-    for (const cb of this.rollCallbacks) {
-      clearTimeout(cb.timer);
-      cb.resolve(null);
-    }
-    this.rollCallbacks = [];
   }
 
   /** Start keep-alive ping interval. */
@@ -465,7 +443,6 @@ export class DiceVisionClient {
         game.i18n.localize("DICEVISION.Notifications.MaxReconnect")
       );
       this.pendingChatRoll = false;
-      this._cancelRollCallbacks();
       return;
     }
 

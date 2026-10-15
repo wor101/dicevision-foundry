@@ -118,7 +118,7 @@ globalThis.WebSocket = FakeWebSocket;
 
 function reset() {
   // Continuous on reproduces the always-waiting chat mode most cases test
-  settings = { mode: "chat", continuous: true, timeout: 15, rollLabel: "DV", chatVisibility: "all" };
+  settings = { mode: "chat", continuous: true, rollLabel: "DV", chatVisibility: "all" };
   hooks = {};
   toasts = [];
   chat = [];
@@ -180,6 +180,24 @@ function connectConfirmed(client, code = "XKRM4N7B") {
   return ws;
 }
 
+/**
+ * A stand-in roll dialog: wants `needed` more rolls. See addRollConsumer().
+ * @returns {{needed: number, got: object[], remove: () => void}}
+ */
+function fakeConsumer(client, needed = 1) {
+  const consumer = {
+    needed,
+    got: [],
+    wantsRoll: () => consumer.needed > 0,
+    consume: (rollData) => {
+      consumer.got.push(rollData);
+      consumer.needed--;
+    }
+  };
+  consumer.remove = client.addRollConsumer(consumer);
+  return consumer;
+}
+
 const ROLL = {
   type: "roll",
   session_code: "XKRM4N7B",
@@ -238,14 +256,14 @@ await test("mode off: no waiting on confirm, rolls not posted", async (c) => {
   check(chat.length === 0, "roll not posted in mode off");
 });
 
-await test("mode off: a waitForResult made while connecting registers waiting on confirm", (c) => {
+await test("mode off: a roll consumer added while connecting registers waiting on confirm", (c) => {
   settings.mode = "off";
   c.connect("XKRM4N7B");
-  c.waitForResult("d20", 99999);
+  fakeConsumer(c);
   const ws = sockets.at(-1);
   ws.open();
   ws.confirm();
-  check(ws.sentTypes().includes("waiting"), "waiting sent for pending callback");
+  check(ws.sentTypes().includes("waiting"), "waiting sent for the consumer");
 });
 
 await test("failed chat post shows an error notification", async (c) => {
@@ -350,12 +368,12 @@ await test("continuous on: mode change to chat sends waiting, off sends cancel",
   check(ws.sentTypes().at(-1) === "cancel", "cancel on switch to off");
 });
 
-await test("mode change to off keeps waiting while a waitForResult is pending", (c) => {
+await test("mode change to off keeps waiting while a roll consumer wants dice", (c) => {
   const ws = connectConfirmed(c);
-  c.waitForResult("d20", 99999);
+  fakeConsumer(c);
   settings.mode = "off";
   Hooks.callAll("dicevision.modeChanged", "off");
-  check(!ws.sentTypes().includes("cancel"), "no cancel with pending callback");
+  check(!ws.sentTypes().includes("cancel"), "no cancel while the consumer waits");
   check(ws.sentTypes().at(-1) === "waiting", "still registered");
 });
 
@@ -447,9 +465,9 @@ await test("cancelRequest releases waiting; a second cancel does nothing", (c) =
   check(ws.sent.length === count, "nothing more sent");
 });
 
-await test("cancelRequest keeps waiting for a pending waitForResult", (c) => {
+await test("cancelRequest keeps waiting for a roll consumer", (c) => {
   const ws = connectOneShot(c);
-  c.waitForResult("d20", 99999);
+  fakeConsumer(c);
   c.requestRoll();
   c.cancelRequest();
   check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
@@ -538,39 +556,103 @@ await test("exhausted reconnects drop a pending request", async (c) => {
   await checkRequestDropped(c);
 });
 
-await test("waitForResult timeout releases waiting", (c) => {
+await test("removing a roll consumer releases waiting", (c) => {
   const ws = connectOneShot(c);
-  c.waitForResult("d20", 5000);
+  const consumer = fakeConsumer(c);
   check(ws.sentTypes().at(-1) === "waiting", "waiting sent");
-  runTimers();
+  consumer.remove();
   check(ws.sentTypes().at(-1) === "cancel", `sent ${JSON.stringify(ws.sentTypes())}`);
 });
 
-await test("waitForResult timeout in continuous mode stays registered", (c) => {
+await test("removing a roll consumer in continuous mode stays registered", (c) => {
   const ws = connectConfirmed(c);
-  c.waitForResult("d20", 5000);
-  runTimers();
+  fakeConsumer(c).remove();
   check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
 });
 
-await test("continuous off: a roll only a waitForResult asked for isn't posted", async (c) => {
+await test("continuous off: a roll a consumer takes isn't posted, then waiting is released", async (c) => {
   const ws = connectOneShot(c);
-  const result = c.waitForResult("d20", 99999);
+  const consumer = fakeConsumer(c);
   ws.recv(ROLL);
   await flush();
-  check((await settled(result)) === 15, "promise resolved with the die");
+  check(consumer.got[0]?.dice?.[0]?.value === 15, "consumer got the roll");
+  check(consumer.got[0]?.timestamp === ROLL.timestamp, "with the bridge timestamp");
   check(chat.length === 0, "not posted to chat");
   check(ws.sentTypes().at(-1) === "cancel", "released after the roll");
 });
 
-await test("a roll without the awaited die type keeps waiting", async (c) => {
-  const ws = connectOneShot(c);
-  const result = c.waitForResult("d8", 99999);
-  ws.sent = [];
-  ws.recv(ROLL); // only a d20
+await test("continuous on: a waiting roll consumer takes the roll instead of chat", async (c) => {
+  const ws = connectConfirmed(c);
+  const consumer = fakeConsumer(c);
+  ws.recv(ROLL);
   await flush();
-  check((await settled(result)) === PENDING, "still pending");
+  check(consumer.got.length === 1 && chat.length === 0, `consumer ${consumer.got.length}, chat ${chat.length}`);
+  ws.recv(ROLL);
+  await flush();
+  check(consumer.got.length === 1 && chat.length === 1, "next roll goes to chat once the consumer is done");
+});
+
+await test("a one-off chat request survives a roll a consumer took", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  fakeConsumer(c);
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 0, "consumer roll not posted");
+  check(c.getState().waiting, "chat request still pending");
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1, "next roll posted");
+});
+
+await test("a consumer that still wants dice after a roll re-arms waiting", async (c) => {
+  const ws = connectOneShot(c);
+  fakeConsumer(c, 2);
+  ws.sent = [];
+  ws.recv(ROLL);
+  await flush();
   check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("sync() doesn't resend waiting while already registered", (c) => {
+  const ws = connectOneShot(c);
+  fakeConsumer(c);
+  const count = ws.sent.length;
+  c.sync();
+  c.sync();
+  check(ws.sent.length === count, `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("a throwing consumer doesn't stop re-arming or later rolls", async (c) => {
+  const ws = connectOneShot(c);
+  let calls = 0;
+  c.addRollConsumer({ wantsRoll: () => true, consume: () => { calls++; throw new Error("boom"); } });
+  ws.sent = [];
+  ws.recv(ROLL);
+  ws.recv(ROLL);
+  await flush();
+  check(calls === 2, `consume called ${calls} times`);
+  check(ws.sentTypes().filter(t => t === "waiting").length === 2, `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("a roll consumer survives a reconnect and re-registers", (c) => {
+  const ws = connectOneShot(c);
+  fakeConsumer(c);
+  ws.serverClose(1006);
+  runTimers();
+  const next = sockets.at(-1);
+  check(next !== ws, "reconnected");
+  next.open();
+  next.confirm();
+  check(next.sentTypes().includes("waiting"), "waiting re-sent on the new socket");
+});
+
+await test("/dv roll in Replace mode explains rolling in Foundry instead", (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  check(c.requestRoll() === false, "requestRoll refused");
+  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.ReplaceMode", `toasts ${JSON.stringify(toasts)}`);
+  check(!ws.sentTypes().includes("waiting"), "no waiting sent");
 });
 
 await test("never-registered client sends no cancel on mode or continuous changes", async (c) => {
@@ -708,16 +790,19 @@ await test("/dv continuous with a bad argument shows help and changes nothing", 
   check(chat.at(-1)?.content === "DICEVISION.Commands.Help", "help");
 });
 
-await test("/dv mode sets chat or off; anything else shows help", async (c) => {
+await test("/dv mode sets off, chat or replace; anything else shows help", async (c) => {
   registerChatControls(c);
   connectOneShot(c);
   chatLine("/dv mode off");
   await flush();
   check(settings.mode === "off", "off");
+  chatLine("/dv mode Replace");
+  await flush();
+  check(settings.mode === "replace", "replace");
   chatLine("/dv mode Chat");
   await flush();
   check(settings.mode === "chat", "chat");
-  chatLine("/dv mode replace");
+  chatLine("/dv mode bogus");
   await flush();
   check(settings.mode === "chat" && chat.at(-1)?.content === "DICEVISION.Commands.Help", "invalid mode rejected");
 });
@@ -919,50 +1004,261 @@ await test("continuous mode is a client setting, off by default, wired to its ho
 });
 
 // ---------------------------------------------------------------------------
-// waitForResult (Phase 2)
+// Dice matching (dice-matching.js)
 // ---------------------------------------------------------------------------
 
-await test("waitForResult matches dice by type, in order", async (c) => {
+const { matchDice } = await import("../scripts/dice-matching.js");
+
+/** Values matchDice assigns, in `needs` order (undefined = left open). */
+function filled(dice, needs) {
+  const { fills, unused } = matchDice(dice, needs);
+  const values = needs.map((_, i) => fills.find(f => f.index === i)?.value);
+  return { values, unused };
+}
+const die = (type, value) => ({ type, value });
+
+await test("matchDice: by type, any order", () => {
+  const { values, unused } = filled([die("d6", 4), die("d20", 17), die("d20", 3)], ["d20", "d6", "d20"]);
+  check(JSON.stringify(values) === "[17,4,3]", `values ${JSON.stringify(values)}`);
+  check(unused.length === 0, "nothing unused");
+});
+
+await test("matchDice: partial match leaves slots open, extras are not-needed", () => {
+  const { values, unused } = filled([die("d20", 12), die("d8", 5)], ["d20", "d6"]);
+  check(values[0] === 12 && values[1] === undefined, `values ${JSON.stringify(values)}`);
+  check(unused.length === 1 && unused[0].type === "d8" && unused[0].reason === "not-needed", JSON.stringify(unused));
+});
+
+await test("matchDice: d10 0 counts as 10", () => {
+  check(filled([die("d10", 0)], ["d10"]).values[0] === 10, "0 -> 10");
+});
+
+await test("matchDice: out-of-range and non-integer values are rejected", () => {
+  const { values, unused } = filled([die("d20", 25), die("d6", 0), die("d8", 2.5)], ["d20", "d6", "d8"]);
+  check(values.every(v => v === undefined), `values ${JSON.stringify(values)}`);
+  check(unused.length === 3 && unused.every(d => d.reason === "out-of-range"), JSON.stringify(unused));
+});
+
+await test("matchDice: percentile pairs fill d100", () => {
+  check(filled([die("d10", 30), die("d10", 7)], ["d100"]).values[0] === 37, "30 + 7");
+  check(filled([die("d10", 7), die("d10", 30)], ["d100"]).values[0] === 37, "order-independent");
+  check(filled([die("d10", 0), die("d10", 0)], ["d100"]).values[0] === 100, "00 + 0 = 100");
+  check(filled([die("d10", 0), die("d10", 5)], ["d100"]).values[0] === 5, "00 + 5 = 5");
+  check(filled([die("d10", 90), die("d10", 0)], ["d100"]).values[0] === 90, "90 + 0 = 90");
+  check(filled([die("d100", 42)], ["d100"]).values[0] === 42, "a d100-typed die fills directly");
+});
+
+await test("matchDice: an incomplete percentile pair fills nothing", () => {
+  const { values, unused } = filled([die("d10", 30)], ["d100"]);
+  check(values[0] === undefined, "d100 open");
+  check(unused.length === 1 && unused[0].value === 30, JSON.stringify(unused));
+  check(filled([die("d10", 3), die("d10", 7)], ["d100"]).values[0] === undefined, "two units dice aren't a pair");
+});
+
+await test("matchDice: d100 + d10 roll takes the pair first, then the d10", () => {
+  const { values } = filled([die("d10", 4), die("d10", 20), die("d10", 0)], ["d10", "d100"]);
+  check(values[1] === 24 && values[0] === 10, `values ${JSON.stringify(values)}`);
+});
+
+await test("matchDice: pips arrive as numbers and match d6", () => {
+  check(JSON.stringify(filled([die("d6", 6), die("d6", 5)], ["d6", "d6"]).values) === "[6,5]", "pips");
+});
+
+// ---------------------------------------------------------------------------
+// Replace mode: roll dialog integration (roll-intercept.js)
+// ---------------------------------------------------------------------------
+
+const { registerRollIntercept, METHOD_ID } = await import("../scripts/roll-intercept.js");
+
+/** Minimal DOM node for the parts of a RollResolver form roll-intercept touches. */
+class FakeNode {
+  constructor(tag, props = {}) {
+    Object.assign(this, { tag, nodeName: tag.toUpperCase(), children: [], parentElement: null, className: "", textContent: "", dataset: {} }, props);
+    const node = this;
+    this.classList = {
+      toggle(name, force) {
+        const names = new Set(node.className.split(" ").filter(Boolean));
+        if (force ?? !names.has(name)) names.add(name); else names.delete(name);
+        node.className = [...names].join(" ");
+      }
+    };
+  }
+  append(child) { child.parentElement = this; this.children.push(child); }
+  prepend(child) { child.parentElement = this; this.children.unshift(child); }
+  after(node) {
+    const siblings = this.parentElement.children;
+    node.parentElement = this.parentElement;
+    siblings.splice(siblings.indexOf(this) + 1, 0, node);
+  }
+  remove() {
+    const siblings = this.parentElement?.children;
+    if (siblings) siblings.splice(siblings.indexOf(this), 1);
+    this.parentElement = null;
+  }
+  *walk() { for (const c of this.children) { yield c; yield* c.walk(); } }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
+  // Supports the selectors roll-intercept.js uses
+  querySelectorAll(selector) {
+    const all = [...this.walk()];
+    if (selector.startsWith(".")) return all.filter(n => n.className.split(" ").includes(selector.slice(1)));
+    const m = /^label\[data-method="(.+)"\] > input:not\(:disabled\)$/.exec(selector);
+    if (m) return all.filter(n => n.tag === "input" && !n.disabled && n.parentElement?.dataset.method === m[1]);
+    if (selector === "input") return all.filter(n => n.tag === "input");
+    throw new Error(`unsupported selector ${selector}`);
+  }
+}
+
+/**
+ * A RollResolver stand-in: one input per die, `method` per die (default
+ * dicevision). registerResult mirrors Foundry's: first empty matching input.
+ */
+function fakeResolver(denominations, method = METHOD_ID) {
+  const form = new FakeNode("form");
+  form.append(new FakeNode("p", { className: "formula", textContent: denominations.join("+") }));
+  const fulfillable = new Map();
+  denominations.forEach((denomination, i) => {
+    const label = new FakeNode("label", { dataset: { denomination, method } });
+    label.append(new FakeNode("input", { value: "", disabled: false, name: `t${i}` }));
+    form.append(label);
+    fulfillable.set(`t${i}`, { term: { randomFace: () => 2 } });
+  });
+  const app = {
+    rendered: true,
+    element: form,
+    fulfillable,
+    results: [],
+    registerResult(m, denomination, value) {
+      const input = form.querySelectorAll(`label[data-method="${m}"] > input:not(:disabled)`)
+        .find(i => i.value === "" && i.parentElement.dataset.denomination === denomination);
+      if (!input) return false;
+      input.value = `${value}`;
+      app.results.push([denomination, value]);
+      return true;
+    },
+    values: () => form.querySelectorAll("input").map(i => i.value),
+    status: () => form.querySelector(".dicevision-status")?.textContent,
+    notice: () => form.querySelector(".dicevision-status-notice")?.textContent
+  };
+  return app;
+}
+
+async function interceptTest(name, fn) {
+  await test(name, async (c) => {
+    globalThis.CONFIG = { Dice: { fulfillment: { methods: {}, defaultMethod: "" } } };
+    globalThis.document = { createElement: tag => new FakeNode(tag) };
+    try {
+      registerRollIntercept(c);
+      await fn(c);
+    } finally {
+      delete globalThis.CONFIG;
+      delete globalThis.document;
+    }
+  });
+}
+
+const open = (app) => Hooks.callAll("renderRollResolver", app);
+const close = (app) => Hooks.callAll("closeRollResolver", app);
+const rollOf = (...dice) => ({ ...ROLL, data: { dice: dice.map(([type, value]) => ({ type, value })), total: 0 } });
+
+await interceptTest("registers an interactive dicevision fulfillment method", () => {
+  const method = CONFIG.Dice.fulfillment.methods[METHOD_ID];
+  check(method?.interactive === true && method.label === "DICEVISION.Fulfillment.Label", JSON.stringify(method));
+});
+
+await interceptTest("Replace mode routes dice to DiceVision only while connected", async (c) => {
+  settings.mode = "replace";
+  check(CONFIG.Dice.fulfillment.defaultMethod === "", "not while disconnected");
   const ws = connectConfirmed(c);
-  const first = c.waitForResult("d20", 99999);
-  const d6 = c.waitForResult("d6", 99999);
-  const second = c.waitForResult("d20", 99999);
-  ws.recv({ ...ROLL, data: { dice: [{ type: "d6", value: 3 }, { type: "d20", value: 15 }], total: 18 } });
-  check((await settled(first)) === 15, "first d20 gets 15");
-  check((await settled(d6)) === 3, "d6 gets 3");
-  check((await settled(second)) === PENDING, "second d20 still pending");
-});
-
-await test("waitForResult timeout resolves null", async (c) => {
-  connectConfirmed(c);
-  const result = c.waitForResult("d20", 5000);
-  check(runTimers().includes(5000), "timeout scheduled with given ms");
-  check((await settled(result)) === null, "resolved null");
-});
-
-await test("waitForResult resolves null on disconnect", async (c) => {
-  connectConfirmed(c);
-  const result = c.waitForResult("d20", 99999);
-  c.disconnect();
-  check((await settled(result)) === null, "resolved null");
-});
-
-await test("waitForResult resolves null on invalid session (4001)", async (c) => {
-  c.connect("BADCODE1");
-  const result = c.waitForResult("d20", 99999);
+  check(CONFIG.Dice.fulfillment.defaultMethod === METHOD_ID, "on once connected");
+  ws.serverClose(1006);
+  check(CONFIG.Dice.fulfillment.defaultMethod === "", "off when the connection drops");
+  runTimers();
   sockets.at(-1).open();
-  sockets.at(-1).serverClose(4001);
-  check((await settled(result)) === null, "resolved null");
+  sockets.at(-1).confirm();
+  await game.settings.set("dicevision", "mode", "chat");
+  check(CONFIG.Dice.fulfillment.defaultMethod === "", "off in chat mode");
 });
 
-await test("waitForResult resolves null when reconnects are exhausted", async (c) => {
-  connectConfirmed(c);
-  const result = c.waitForResult("d20", 99999);
-  // Keep the callback's own timeout out of failAllRetries' timer runs
-  const callbackTimer = timers.find(t => t.ms === 99999);
-  timers = timers.filter(t => t !== callbackTimer);
-  failAllRetries();
-  check((await settled(result)) === null, "resolved null");
+await interceptTest("Replace mode leaves another module's default method alone", async (c) => {
+  CONFIG.Dice.fulfillment.defaultMethod = "bluetooth";
+  settings.mode = "chat";
+  connectOneShot(c);
+  check(CONFIG.Dice.fulfillment.defaultMethod === "bluetooth", "untouched");
+});
+
+await interceptTest("an open dialog registers waiting and fills from the roll", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d20", "d6"]);
+  open(app);
+  check(ws.sentTypes().at(-1) === "waiting", "waiting on open");
+  check(app.status() === 'DICEVISION.Fulfillment.Waiting {"dice":"2d20, 1d6"}', `status ${app.status()}`);
+  ws.recv(rollOf(["d6", 3], ["d20", 18], ["d20", 4]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["18","4","3"]', `values ${JSON.stringify(app.values())}`);
+  check(ws.sentTypes().at(-1) === "cancel", "released once filled");
+  check(app.status() === "DICEVISION.Fulfillment.Done", `status ${app.status()}`);
+  check(chat.length === 0, "nothing posted to chat");
+});
+
+await interceptTest("a partial roll fills what matches, warns, and keeps waiting", async (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d6"]);
+  open(app);
+  ws.sent = [];
+  ws.recv(rollOf(["d20", 11], ["d8", 7]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["11",""]', `values ${JSON.stringify(app.values())}`);
+  check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed: ${JSON.stringify(ws.sentTypes())}`);
+  check(toasts.at(-1)?.[0] === "warn" && toasts.at(-1)[1].includes("d8 (7)"), `toasts ${JSON.stringify(toasts)}`);
+  check(app.notice()?.includes("d8 (7)"), `notice ${app.notice()}`);
+  check(app.status() === 'DICEVISION.Fulfillment.Waiting {"dice":"1d6"}', `status ${app.status()}`);
+  ws.recv(rollOf(["d6", 2]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["11","2"]', "second roll fills the d6");
+  check(app.notice() === undefined, "notice cleared");
+});
+
+await interceptTest("closing the dialog (e.g. Submit rolls the rest digitally) releases waiting", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  app.rendered = false;
+  close(app);
+  check(ws.sentTypes().at(-1) === "cancel", `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await interceptTest("dice the camera can't read (d3, coins) are rolled digitally", (c) => {
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d3", "dc"]);
+  open(app);
+  check(JSON.stringify(app.values()) === '["2","2"]', `values ${JSON.stringify(app.values())}`);
+  check(!ws.sentTypes().includes("waiting"), "nothing to wait for");
+});
+
+await interceptTest("dialogs for other methods (manual) are ignored", (c) => {
+  const ws = connectOneShot(c);
+  open(fakeResolver(["d20"], "manual"));
+  check(!ws.sentTypes().includes("waiting"), `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await interceptTest("two open dialogs fill oldest first", async (c) => {
+  const ws = connectOneShot(c);
+  const attack = fakeResolver(["d20"]);
+  const damage = fakeResolver(["d8"]);
+  open(attack);
+  open(damage);
+  ws.recv(rollOf(["d8", 6], ["d20", 9]));
+  await flush();
+  check(attack.values()[0] === "9" && damage.values()[0] === "6", "both filled from one roll");
+});
+
+await interceptTest("the dialog says when DiceVision isn't connected", (c) => {
+  const app = fakeResolver(["d20"]);
+  open(app);
+  check(app.status() === "DICEVISION.Fulfillment.NotConnected", `status ${app.status()}`);
+  connectOneShot(c);
+  check(app.status() === 'DICEVISION.Fulfillment.Waiting {"dice":"1d20"}', `status after connect ${app.status()}`);
 });
 
 // ---------------------------------------------------------------------------

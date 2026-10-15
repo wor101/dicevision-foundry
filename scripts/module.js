@@ -1,14 +1,14 @@
 /**
  * DiceVision — Foundry VTT Module Entry Point
  *
- * Phase 1: Foundation + Chat Mode
- * Connects to DiceVision backend via WebSocket and displays
- * physical dice roll results in Foundry's chat.
+ * Connects to the DiceVision backend via WebSocket. Chat mode posts physical
+ * rolls to chat; Replace mode fills Foundry's own rolls with physical dice.
  */
 
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
+import { registerRollIntercept } from "./roll-intercept.js";
 
 const MODULE_ID = "dicevision";
 
@@ -21,6 +21,7 @@ Hooks.once("init", () => {
 
   registerSettings();
   registerChatControls(diceVisionClient);
+  registerRollIntercept(diceVisionClient);
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);

@@ -1,7 +1,7 @@
 {
   "id": "dicevision",
   "title": "DiceVision \u2014 Physical Dice Recognition",
-  "description": "Use physical dice with DiceVision's AI-powered camera recognition system. Rolls are detected in real-time and displayed in Foundry.",
+  "description": "Use physical dice with DiceVision's AI-powered camera recognition system. Physical rolls fill Foundry's own dice rolls (/roll, character sheets) or post to chat.",
   "version": "0.1.0",
   "authors": [
     {

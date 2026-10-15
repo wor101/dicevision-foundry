@@ -7,64 +7,21 @@
 // Use a session code nobody is rolling real dice on, and keep the real
 // dashboard closed on it.
 
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { launchBrowser, ensureWorld, joinAs, errors } from './foundry.mjs';
+import { startDashboard, killDashboards } from './dashboard.mjs';
 
 const code = process.argv[2];
 if (!code) {
   console.error('usage: continuous.mjs SESSION_CODE');
   process.exit(2);
 }
-const DASHBOARD = fileURLToPath(new URL('../fake-dashboard.mjs', import.meta.url));
-
 let failures = 0;
 const check = (cond, msg) => {
   console.log(`${cond ? 'ok  ' : 'FAIL'} ${msg}`);
   if (!cond) failures++;
 };
 
-const children = new Set();
-
-function dashboard(args) {
-  const proc = spawn('node', [DASHBOARD, code, ...args]);
-  children.add(proc);
-  const events = [];
-  let buf = '';
-  proc.stdout.on('data', (d) => {
-    buf += d;
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i);
-      buf = buf.slice(i + 1);
-      try {
-        events.push(JSON.parse(line));
-      } catch {
-        console.error(`fake dashboard: ${line}`);
-      }
-    }
-  });
-  proc.stderr.on('data', d => process.stderr.write(`fake dashboard: ${d}`));
-  const exitCode = new Promise(r => proc.on('exit', (status) => { children.delete(proc); r(status); }));
-  // A dashboard that's never asked for a roll never exits: fail instead of hanging
-  const exited = (ms = 30000) => Promise.race([
-    exitCode,
-    new Promise((_, reject) => setTimeout(() => {
-      proc.kill();
-      reject(new Error(`fake dashboard still running after ${ms}ms (module never asked for a roll?)`));
-    }, ms).unref())
-  ]);
-  const until = async (name, ms = 15000) => {
-    const start = Date.now();
-    while (!events.some(e => e.event === name)) {
-      if (Date.now() - start > ms) throw new Error(`timed out waiting for dashboard "${name}"`);
-      await new Promise(r => setTimeout(r, 100));
-    }
-  };
-  const count = name => events.filter(e => e.event === name).length;
-  const done = () => events.find(e => e.event === 'done');
-  return { exited, until, count, done };
-}
+const dashboard = args => startDashboard(code, args);
 
 const browser = await launchBrowser();
 try {
@@ -136,7 +93,7 @@ try {
   check(errors(page).length === 0 && errors(player).length === 0,
     `no console errors ${[...errors(page), ...errors(player)].join('; ')}`);
 } finally {
-  for (const child of children) child.kill();
+  killDashboards();
   await browser.close();
 }
 process.exitCode = failures ? 1 : 0;
