@@ -26,6 +26,10 @@ export class DiceVisionClient {
     this.reconnectTimeout = null;
     this.reconnectAttempts = 0;
     this.rollCallbacks = [];
+    // A one-off chat roll requested via requestRoll() (continuous mode off)
+    this.pendingChatRoll = false;
+    // Whether the bridge currently has us registered as waiting
+    this.registered = false;
     this._setupHooks();
   }
 
@@ -42,11 +46,15 @@ export class DiceVisionClient {
 
     Hooks.on("dicevision.modeChanged", (newMode) => {
       console.log(`[DiceVision] Mode changed to: ${newMode}`);
-      if (newMode === "chat") {
-        this.sendWaiting();
-      } else if (!this.rollCallbacks.length) {
-        this.sendCancel();
-      }
+      if (newMode !== "chat") this.pendingChatRoll = false;
+      this._syncWaiting();
+      this._notifyState();
+    });
+
+    Hooks.on("dicevision.continuousChanged", (continuous) => {
+      console.log(`[DiceVision] Continuous mode ${continuous ? "on" : "off"}`);
+      this._syncWaiting();
+      this._notifyState();
     });
   }
 
@@ -102,6 +110,7 @@ export class DiceVisionClient {
         console.log(`[DiceVision] Disconnected: ${event.code} ${event.reason}`);
         this.ws = null;
         this.connected = false;
+        this.registered = false;
         this._stopPing();
 
         if (event.code === INVALID_SESSION_CLOSE_CODE) {
@@ -109,11 +118,14 @@ export class DiceVisionClient {
             game.i18n.localize("DICEVISION.Notifications.InvalidSession")
           );
           this.sessionCode = null;
+          this.pendingChatRoll = false;
           this._cancelRollCallbacks();
+          this._notifyState();
           return;
         }
 
         this._attemptReconnect();
+        this._notifyState();
       };
 
       this.ws.onerror = (error) => {
@@ -121,16 +133,20 @@ export class DiceVisionClient {
       };
     } catch (err) {
       console.error("[DiceVision] Failed to create WebSocket:", err);
+      ui.notifications.error(
+        game.i18n.format("DICEVISION.Notifications.ConnectFailed", { error: err.message })
+      );
+      this.ws = null;
+      this.sessionCode = null;
+      this._notifyState();
     }
   }
 
   /** Disconnect, cancel any pending reconnect, and clean up all state. */
   disconnect() {
-    // Older backends don't drop an app's waiting registration when its socket
-    // closes, which would leave the dashboard armed for an app that's gone.
-    if (this.isConnected()) {
-      this.sendCancel();
-    }
+    // No "cancel" first: the bridge drops our waiting registration when the
+    // socket closes (dice-vision#408), and only tells the dashboard if no other
+    // app is still waiting. An explicit cancel would always clear it.
     this._closeSocket();
 
     if (this.reconnectTimeout) {
@@ -139,7 +155,9 @@ export class DiceVisionClient {
     }
 
     this.reconnectAttempts = 0;
+    this.pendingChatRoll = false;
     this._cancelRollCallbacks();
+    this._notifyState();
   }
 
   /** @returns {boolean} Whether the client is currently connected. */
@@ -158,15 +176,97 @@ export class DiceVisionClient {
     }
 
     this.connected = false;
+    this.registered = false;
+  }
+
+  /**
+   * Whether chat mode wants the next roll: always in continuous mode,
+   * otherwise only after requestRoll().
+   */
+  _wantsChatRoll() {
+    if (game.settings.get(MODULE_ID, "mode") !== "chat") return false;
+    return this.pendingChatRoll || game.settings.get(MODULE_ID, "continuous");
   }
 
   /**
    * The DiceVision dashboard forwards a roll only while it believes an app is
-   * waiting, and drops that flag after each roll it sends. Chat mode re-sends
-   * "waiting" to re-arm it.
+   * waiting, and drops that flag after each roll it sends. While waiting it
+   * also switches to continuous capture, so only stay registered when a roll
+   * is actually wanted.
    */
   _shouldWait() {
-    return game.settings.get(MODULE_ID, "mode") === "chat" || this.rollCallbacks.length > 0;
+    return this._wantsChatRoll() || this.rollCallbacks.length > 0;
+  }
+
+  /** Register or release our waiting state to match _shouldWait(). */
+  _syncWaiting() {
+    if (!this.isConnected()) return;
+    if (this._shouldWait()) {
+      this.sendWaiting();
+    } else if (this.registered) {
+      // The dashboard treats any "cancelled" as nobody waiting, whatever its
+      // app, so never send one we don't need. Even this one clears the request
+      // of another app on the session (see CLAUDE.md, WebSocket Protocol).
+      this.sendCancel();
+    }
+  }
+
+  /**
+   * Ask for the next physical roll to be posted to chat. A no-op (returning
+   * true) if a roll is already wanted: continuous mode or a pending request.
+   * @returns {boolean} Whether a roll is now being waited for
+   */
+  requestRoll() {
+    if (game.settings.get(MODULE_ID, "mode") !== "chat") {
+      ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ModeOff"));
+      return false;
+    }
+    if (!this.isConnected()) {
+      ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
+      return false;
+    }
+    if (this._wantsChatRoll()) return true;
+
+    this.pendingChatRoll = true;
+    if (!this.sendWaiting()) {
+      this.pendingChatRoll = false;
+      ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
+      return false;
+    }
+    ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.WaitingForRoll"));
+    this._notifyState();
+    return true;
+  }
+
+  /**
+   * Withdraw a pending requestRoll().
+   * @returns {boolean} Whether there was a request to cancel
+   */
+  cancelRequest() {
+    if (!this.pendingChatRoll) return false;
+    this.pendingChatRoll = false;
+    this._syncWaiting();
+    this._notifyState();
+    return true;
+  }
+
+  /**
+   * @returns {{connected: boolean, sessionCode: string|null, mode: string,
+   *   continuous: boolean, waiting: boolean}}
+   */
+  getState() {
+    return {
+      connected: this.isConnected(),
+      sessionCode: this.sessionCode,
+      mode: game.settings.get(MODULE_ID, "mode"),
+      continuous: game.settings.get(MODULE_ID, "continuous"),
+      waiting: this.isConnected() && this._wantsChatRoll()
+    };
+  }
+
+  /** Tell the UI (chat controls) that connection or waiting state changed. */
+  _notifyState() {
+    Hooks.callAll("dicevision.stateChanged", this.getState());
   }
 
   /** Handle incoming WebSocket messages. */
@@ -186,7 +286,12 @@ export class DiceVisionClient {
         break;
 
       case "cancelled":
-        console.log("[DiceVision] Waiting cancelled");
+        // Any app's cancel (or another Foundry user's on a shared code) clears
+        // the dashboard's waiting state and may have removed "foundry" from
+        // the bridge too. Re-register if we still want a roll.
+        console.log(`[DiceVision] Waiting cancelled (${message.app ?? "all apps"})`);
+        this.registered = false;
+        this._syncWaiting();
         break;
 
       case "pong":
@@ -202,7 +307,8 @@ export class DiceVisionClient {
   }
 
   /**
-   * The server confirmed a valid session: reset retries and register as waiting.
+   * The server confirmed a valid session: reset retries, and register as
+   * waiting if a roll is wanted (_shouldWait()).
    * @param {object} message - { session_code, waiting, waiting_apps }
    */
   _onSessionConfirmed(message) {
@@ -217,6 +323,7 @@ export class DiceVisionClient {
     ui.notifications.info(
       game.i18n.format("DICEVISION.Notifications.Connected", { code: this.sessionCode })
     );
+    this._notifyState();
   }
 
   /**
@@ -228,38 +335,48 @@ export class DiceVisionClient {
 
     console.log("[DiceVision] Roll received:", rollData);
 
+    const postToChat = this._wantsChatRoll();
+    this.pendingChatRoll = false;
+
     // Resolve any pending waitForResult callbacks (Phase 2)
     this._resolveRollCallbacks(rollData);
 
-    // The dashboard dropped its waiting flag when it sent this roll
+    // The dashboard dropped its waiting flag when it sent this roll. Re-arm it
+    // if we want another roll, else release the bridge so a reloaded
+    // dashboard doesn't find us still waiting.
     if (this._shouldWait()) {
       this.sendWaiting();
+    } else if (this.registered) {
+      this.sendCancel();
     }
+    this._notifyState();
 
-    const mode = game.settings.get(MODULE_ID, "mode");
-    if (mode === "off") {
-      console.log("[DiceVision] Mode is off, ignoring roll");
+    if (!postToChat) {
+      // Mode off, or another app on this session asked for the roll
+      console.log("[DiceVision] No chat roll requested, ignoring roll");
       return;
     }
 
-    if (mode === "chat") {
-      displayRollInChat(rollData).catch((err) => {
-        console.error("[DiceVision] Failed to display roll:", err);
-        ui.notifications.error(
-          game.i18n.format("DICEVISION.Notifications.DisplayFailed", { error: err.message })
-        );
-      });
-    }
+    displayRollInChat(rollData).catch((err) => {
+      console.error("[DiceVision] Failed to display roll:", err);
+      ui.notifications.error(
+        game.i18n.format("DICEVISION.Notifications.DisplayFailed", { error: err.message })
+      );
+    });
   }
 
   /** Send "waiting" message to backend. */
   sendWaiting() {
-    return this._send({ type: "waiting", app_id: APP_ID });
+    const sent = this._send({ type: "waiting", app_id: APP_ID });
+    if (sent) this.registered = true;
+    return sent;
   }
 
   /** Send "cancel" message to backend. */
   sendCancel() {
-    return this._send({ type: "cancel", app_id: APP_ID });
+    const sent = this._send({ type: "cancel", app_id: APP_ID });
+    if (sent) this.registered = false;
+    return sent;
   }
 
   /**
@@ -280,6 +397,7 @@ export class DiceVisionClient {
           const idx = this.rollCallbacks.indexOf(callback);
           if (idx > -1) this.rollCallbacks.splice(idx, 1);
           resolve(null);
+          this._syncWaiting();
         }, timeout)
       };
 
@@ -346,6 +464,7 @@ export class DiceVisionClient {
       ui.notifications.warn(
         game.i18n.localize("DICEVISION.Notifications.MaxReconnect")
       );
+      this.pendingChatRoll = false;
       this._cancelRollCallbacks();
       return;
     }

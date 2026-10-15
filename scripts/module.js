@@ -8,6 +8,7 @@
 
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
+import { registerChatControls } from "./chat-controls.js";
 
 const MODULE_ID = "dicevision";
 
@@ -19,6 +20,7 @@ Hooks.once("init", () => {
   console.log("[DiceVision] Initializing module");
 
   registerSettings();
+  registerChatControls(diceVisionClient);
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);
@@ -27,7 +29,11 @@ Hooks.once("init", () => {
       client: diceVisionClient,
       connect: (code) => diceVisionClient.connect(code),
       disconnect: () => diceVisionClient.disconnect(),
-      isConnected: () => diceVisionClient.isConnected()
+      isConnected: () => diceVisionClient.isConnected(),
+      requestRoll: () => diceVisionClient.requestRoll(),
+      cancelRequest: () => diceVisionClient.cancelRequest(),
+      setContinuous: (on) => game.settings.set(MODULE_ID, "continuous", !!on),
+      getState: () => diceVisionClient.getState()
     };
   }
 });

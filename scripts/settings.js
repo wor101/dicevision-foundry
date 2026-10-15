@@ -33,6 +33,18 @@ export function registerSettings() {
     }
   });
 
+  game.settings.register(MODULE_ID, "continuous", {
+    name: "DICEVISION.Settings.Continuous.Name",
+    hint: "DICEVISION.Settings.Continuous.Hint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: (value) => {
+      Hooks.callAll("dicevision.continuousChanged", value);
+    }
+  });
+
   game.settings.register(MODULE_ID, "autoConnect", {
     name: "DICEVISION.Settings.AutoConnect.Name",
     hint: "DICEVISION.Settings.AutoConnect.Hint",
