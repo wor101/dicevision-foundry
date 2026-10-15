@@ -1,14 +1,14 @@
 /**
  * DiceVision — Foundry VTT Module Entry Point
  *
- * Phase 1: Foundation + Chat Mode
- * Connects to DiceVision backend via WebSocket and displays
- * physical dice roll results in Foundry's chat.
+ * Connects to the DiceVision backend via WebSocket. Chat mode posts physical
+ * rolls to chat; Replace mode fills Foundry's own rolls with physical dice.
  */
 
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
+import { registerRollIntercept, diceConfigUsesDiceVision } from "./roll-intercept.js";
 
 const MODULE_ID = "dicevision";
 
@@ -21,6 +21,7 @@ Hooks.once("init", () => {
 
   registerSettings();
   registerChatControls(diceVisionClient);
+  registerRollIntercept(diceVisionClient);
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);
@@ -49,10 +50,16 @@ Hooks.once("ready", () => {
   const autoConnect = game.settings.get(MODULE_ID, "autoConnect");
   const mode = game.settings.get(MODULE_ID, "mode");
 
+  // Replace mode with nothing to connect to: rolls stay digital, say so
+  if (mode === "replace" && !(sessionCode && autoConnect)) {
+    ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.ReplaceNotConnected"));
+  }
+
   if (sessionCode && autoConnect) {
     diceVisionClient.connect(sessionCode);
 
-    if (mode === "off") {
+    // Off still fills dice set to DiceVision in Core > Dice Configuration
+    if (mode === "off" && !diceConfigUsesDiceVision()) {
       ui.notifications.info(
         game.i18n.localize("DICEVISION.Notifications.ModeOff")
       );

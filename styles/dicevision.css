@@ -94,3 +94,19 @@
 @keyframes dicevision-pulse {
   50% { opacity: 0.4; }
 }
+
+/* Replace mode: status line in Foundry's roll dialog */
+.roll-resolver .dicevision-status {
+  margin: 0;
+  font-size: var(--font-size-13, 13px);
+}
+
+.roll-resolver .dicevision-status.dicevision-waiting {
+  animation: dicevision-pulse 1.5s ease-in-out infinite;
+}
+
+.roll-resolver .dicevision-status-notice {
+  margin: 0;
+  font-size: var(--font-size-13, 13px);
+  color: var(--color-level-warning, #ee9b3a);
+}

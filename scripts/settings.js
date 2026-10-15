@@ -26,7 +26,8 @@ export function registerSettings() {
     default: "off",
     choices: {
       off: "DICEVISION.Settings.Mode.Off",
-      chat: "DICEVISION.Settings.Mode.Chat"
+      chat: "DICEVISION.Settings.Mode.Chat",
+      replace: "DICEVISION.Settings.Mode.Replace"
     },
     onChange: (value) => {
       Hooks.callAll("dicevision.modeChanged", value);
@@ -75,19 +76,5 @@ export function registerSettings() {
     config: true,
     type: String,
     default: "DiceVision"
-  });
-
-  game.settings.register(MODULE_ID, "timeout", {
-    name: "DICEVISION.Settings.Timeout.Name",
-    hint: "DICEVISION.Settings.Timeout.Hint",
-    scope: "client",
-    config: true,
-    type: Number,
-    default: 15,
-    range: {
-      min: 5,
-      max: 60,
-      step: 1
-    }
   });
 }

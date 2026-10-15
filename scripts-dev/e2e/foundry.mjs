@@ -6,6 +6,7 @@
 //   FOUNDRY_WORLD           default dicevision-test
 //   FOUNDRY_ADMIN_PASSWORD  admin password (only needed to launch the world)
 //   FOUNDRY_ADMIN_USER      admin username, if the server has one (v14+)
+//   FOUNDRY_USER            user replace.mjs joins as (default Gamemaster)
 //   PLAYWRIGHT_MODULE       path to playwright's index.mjs if `playwright`
 //                           isn't resolvable from here
 
@@ -68,6 +69,18 @@ export async function joinAs(browser, user = 'Gamemaster', password = '') {
   await page.waitForURL('**/game', { timeout: 30000 });
   await page.waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 60000 });
   return page;
+}
+
+/**
+ * Type a line into the chat box and press Enter, as a user would. v14's
+ * input is a ProseMirror editor, so hooks see HTML ("<p>/dv roll</p>"),
+ * unlike ui.chat.processMessage("/dv roll").
+ */
+export async function typeChat(page, line) {
+  const input = (await page.$('#chat-message [contenteditable]')) ?? (await page.$('#chat-message'));
+  await input.click();
+  await page.keyboard.type(line);
+  await page.keyboard.press('Enter');
 }
 
 export function errors(page) {
