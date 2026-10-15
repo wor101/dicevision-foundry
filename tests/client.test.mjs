@@ -23,7 +23,15 @@ globalThis.Hooks = {
   callAll: (name, ...args) => (hooks[name] ?? []).forEach(fn => fn(...args))
 };
 globalThis.game = {
-  settings: { get: (_module, key) => settings[key] },
+  settings: {
+    get: (_module, key) => settings[key],
+    // Mirrors the onChange hooks in settings.js
+    set: async (_module, key, value) => {
+      settings[key] = value;
+      const hook = { mode: "modeChanged", continuous: "continuousChanged", sessionCode: "sessionCodeChanged" }[key];
+      if (hook) Hooks.callAll(`dicevision.${hook}`, value);
+    }
+  },
   i18n: { localize: key => key, format: key => key },
   users: [
     { id: "gm1", isGM: true },
@@ -107,7 +115,8 @@ class FakeWebSocket {
 globalThis.WebSocket = FakeWebSocket;
 
 function reset() {
-  settings = { mode: "chat", timeout: 15, rollLabel: "DV", chatVisibility: "all" };
+  // Continuous on reproduces the always-waiting chat mode most cases test
+  settings = { mode: "chat", continuous: true, timeout: 15, rollLabel: "DV", chatVisibility: "all" };
   hooks = {};
   toasts = [];
   chat = [];
@@ -120,6 +129,7 @@ function reset() {
 
 reset();
 const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
+const { registerChatControls } = await import("../scripts/chat-controls.js");
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -356,6 +366,204 @@ await test("switching session code cancels waiting on the old session", (c) => {
   Hooks.callAll("dicevision.sessionCodeChanged", "ABCD2345");
   check(oldWs.sentTypes().at(-1) === "cancel", "cancel sent on old socket");
   check(sockets.at(-1).url.endsWith("/ABCD2345"), "new socket for new code");
+});
+
+// ---------------------------------------------------------------------------
+// Continuous mode off: one roll per request
+// ---------------------------------------------------------------------------
+
+/** Connect with continuous mode off; returns the socket. */
+function connectOneShot(client) {
+  settings.continuous = false;
+  return connectConfirmed(client);
+}
+
+await test("continuous off: confirm does not register waiting", (c) => {
+  const ws = connectOneShot(c);
+  check(!ws.sentTypes().includes("waiting"), `sent ${JSON.stringify(ws.sentTypes())}`);
+  check(!c.getState().waiting, "state not waiting");
+});
+
+await test("continuous off: requestRoll waits for one roll, posts it, then releases", async (c) => {
+  const ws = connectOneShot(c);
+  check(c.requestRoll() === true, "requestRoll returns true");
+  check(ws.sentTypes().at(-1) === "waiting", "waiting sent");
+  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.WaitingForRoll", "waiting toast");
+  check(c.getState().waiting, "state waiting");
+  ws.sent = [];
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1, "roll posted");
+  check(JSON.stringify(ws.sentTypes()) === '["cancel"]', `after roll sent ${JSON.stringify(ws.sentTypes())}`);
+  check(!c.getState().waiting, "no longer waiting");
+});
+
+await test("continuous off: a roll nobody in Foundry asked for is not posted", async (c) => {
+  const ws = connectOneShot(c);
+  ws.recv(ROLL); // e.g. Talespire on the same session was waiting
+  await flush();
+  check(chat.length === 0, "not posted");
+  check(!ws.sentTypes().includes("cancel"), "no cancel: we never registered, and a cancel would clear the other app");
+});
+
+await test("requestRoll twice sends waiting once", (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  c.requestRoll();
+  check(ws.sentTypes().filter(t => t === "waiting").length === 1, `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("requestRoll: not connected or mode off warns and returns false", (c) => {
+  settings.continuous = false;
+  check(c.requestRoll() === false, "false when disconnected");
+  check(toasts.at(-1)?.join() === "warn,DICEVISION.Notifications.NotConnected", `toasts ${JSON.stringify(toasts)}`);
+  connectConfirmed(c);
+  settings.mode = "off";
+  check(c.requestRoll() === false, "false in mode off");
+  check(toasts.at(-1)?.join() === "warn,DICEVISION.Notifications.ModeOff", `toasts ${JSON.stringify(toasts)}`);
+});
+
+await test("requestRoll in continuous mode is a no-op", (c) => {
+  const ws = connectConfirmed(c);
+  ws.sent = [];
+  check(c.requestRoll() === true, "returns true");
+  check(ws.sent.length === 0, "nothing sent");
+});
+
+await test("cancelRequest releases waiting; a second cancel does nothing", (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  check(c.cancelRequest() === true, "first cancel true");
+  check(ws.sentTypes().at(-1) === "cancel", "cancel sent");
+  const count = ws.sent.length;
+  check(c.cancelRequest() === false, "second cancel false");
+  check(ws.sent.length === count, "nothing more sent");
+});
+
+await test("cancelRequest keeps waiting for a pending waitForResult", (c) => {
+  const ws = connectOneShot(c);
+  c.waitForResult("d20", 99999);
+  c.requestRoll();
+  c.cancelRequest();
+  check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("toggling continuous registers and releases waiting", async (c) => {
+  const ws = connectOneShot(c);
+  await game.settings.set("dicevision", "continuous", true);
+  check(ws.sentTypes().at(-1) === "waiting", "waiting on continuous on");
+  await game.settings.set("dicevision", "continuous", false);
+  check(ws.sentTypes().at(-1) === "cancel", "cancel on continuous off");
+});
+
+await test("continuous off while a request is pending keeps waiting", async (c) => {
+  const ws = connectConfirmed(c);
+  settings.continuous = false;
+  c.pendingChatRoll = true; // requested before continuous was switched off
+  Hooks.callAll("dicevision.continuousChanged", false);
+  check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("mode change to chat with continuous off does not register waiting", (c) => {
+  settings.mode = "off";
+  const ws = connectOneShot(c);
+  settings.mode = "chat";
+  Hooks.callAll("dicevision.modeChanged", "chat");
+  check(!ws.sentTypes().includes("waiting"), `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("mode change to off drops a pending request", (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  settings.mode = "off";
+  Hooks.callAll("dicevision.modeChanged", "off");
+  check(ws.sentTypes().at(-1) === "cancel", "cancel sent");
+  check(c.pendingChatRoll === false, "request dropped");
+});
+
+await test("a pending request survives a reconnect", (c) => {
+  connectOneShot(c);
+  c.requestRoll();
+  sockets.at(-1).serverClose(1006);
+  runTimers();
+  const ws = sockets.at(-1);
+  ws.open();
+  ws.confirm();
+  check(ws.sentTypes().includes("waiting"), "waiting re-sent after reconnect");
+});
+
+await test("disconnect drops a pending request", (c) => {
+  connectOneShot(c);
+  c.requestRoll();
+  c.disconnect();
+  check(c.pendingChatRoll === false, "request dropped");
+});
+
+await test("disconnect without a registration sends no cancel", (c) => {
+  const ws = connectOneShot(c);
+  c.disconnect();
+  check(!ws.sentTypes().includes("cancel"), `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("waitForResult timeout releases waiting", (c) => {
+  const ws = connectOneShot(c);
+  c.waitForResult("d20", 5000);
+  check(ws.sentTypes().at(-1) === "waiting", "waiting sent");
+  runTimers();
+  check(ws.sentTypes().at(-1) === "cancel", `sent ${JSON.stringify(ws.sentTypes())}`);
+});
+
+await test("state changes are announced for the chat controls", (c) => {
+  const states = [];
+  Hooks.on("dicevision.stateChanged", s => states.push(s));
+  connectOneShot(c);
+  c.requestRoll();
+  check(states.at(-1)?.connected && states.at(-1)?.waiting, `last ${JSON.stringify(states.at(-1))}`);
+  c.cancelRequest();
+  check(states.at(-1)?.waiting === false, "not waiting after cancel");
+});
+
+// ---------------------------------------------------------------------------
+// /dv chat commands
+// ---------------------------------------------------------------------------
+
+/** Send a chat line through the chatMessage hook; returns the hook's result. */
+function chatLine(message) {
+  return hooks.chatMessage.map(fn => fn({}, message, {})).find(r => r !== undefined);
+}
+
+await test("/dv roll requests a roll and stops the message reaching chat", (c) => {
+  registerChatControls(c);
+  const ws = connectOneShot(c);
+  check(chatLine("/dv roll") === false, "hook returns false");
+  check(ws.sentTypes().at(-1) === "waiting", "waiting sent");
+});
+
+await test("other chat messages pass through", (c) => {
+  registerChatControls(c);
+  check(chatLine("/roll 1d20") === undefined, "/roll untouched");
+  check(chatLine("/dvx") === undefined, "/dvx untouched");
+});
+
+await test("/dv continuous toggles, and accepts on/off", async (c) => {
+  registerChatControls(c);
+  const ws = connectOneShot(c);
+  chatLine("/dv continuous");
+  await flush();
+  check(settings.continuous === true && ws.sentTypes().at(-1) === "waiting", "toggled on");
+  chatLine("/dv continuous off");
+  await flush();
+  check(settings.continuous === false && ws.sentTypes().at(-1) === "cancel", "set off");
+});
+
+await test("/dv status and unknown commands reply privately", async (c) => {
+  registerChatControls(c);
+  connectOneShot(c);
+  chatLine("/dv status");
+  chatLine("/dv nonsense");
+  await flush();
+  check(chat.length === 2 && chat.every(m => JSON.stringify(m.whisper) === '["u1"]'), `chat ${JSON.stringify(chat)}`);
+  check(chat[1]?.content === "DICEVISION.Commands.Help", "help shown for unknown command");
 });
 
 // ---------------------------------------------------------------------------

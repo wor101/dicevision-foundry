@@ -4,7 +4,7 @@
 
 This repository contains a Foundry VTT module that connects to DiceVision's WebSocket bridge and posts physical dice roll results to Foundry's chat.
 
-**Status:** Phase 1 (Chat Mode) code exists but has not been reviewed or tested in Foundry. It was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
+**Status:** Phase 1 (Chat Mode) works on Foundry v14 (tested locally against the live bridge; see Local End-to-End Testing). It was originally PR #107 in `wor101/dice-vision` and moved here on 2026-10-14.
 
 ## Architecture
 
@@ -52,13 +52,14 @@ dicevision-foundry/
 │   ├── module.js             # Entry point: init/ready hooks, public API
 │   ├── dicevision-client.js  # WebSocket client singleton, reconnect, roll callbacks
 │   ├── dice-bridge.js        # Roll data → ChatMessage
+│   ├── chat-controls.js      # Chat sidebar buttons + /dv commands
 │   └── settings.js           # game.settings registration (all client-scoped)
 ├── templates/
 │   └── chat-message.hbs      # Chat card template
 ├── styles/dicevision.css     # Chat card styling
 ├── lang/en.json              # Localization strings (DICEVISION.*)
 ├── tests/client.test.mjs     # Client tests: node tests/client.test.mjs
-├── scripts-dev/              # Release helpers (stamp-manifest.sh, build-zip.sh)
+├── scripts-dev/              # Release helpers, fake-dashboard.mjs, e2e/ (Playwright)
 ├── .github/workflows/        # release.yml — tag → GitHub release
 ├── README.md                 # User documentation
 ├── CLAUDE.md                 # This file
@@ -99,14 +100,19 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 ### Messages Sent (Client → Server)
 
 ```javascript
-{ "type": "waiting", "app_id": "foundry" }   // On connect + after each roll (chat mode), or for waitForResult()
-{ "type": "cancel", "app_id": "foundry" }    // Mode switched to off, or before disconnecting
+{ "type": "waiting", "app_id": "foundry" }   // A roll is wanted: requestRoll(), continuous mode, or waitForResult()
+{ "type": "cancel", "app_id": "foundry" }    // No roll wanted any more — only if we sent "waiting"
 { "type": "ping" }                            // Keep-alive, every 30s
 ```
 
-**The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`. Chat mode therefore re-sends `waiting` after every roll, as Talespire does, and each `waiting` re-arms the dashboard.
+**The dashboard only forwards a roll while it believes an app is waiting**, and it drops that local flag after each roll it sends. The bridge itself keeps the app in `waiting_apps`.
 
-**Send `cancel` before disconnecting.** The bridge registers every socket as app `"unknown"`, so its disconnect cleanup never removes `"foundry"` from `waiting_apps`. Without a `cancel`, the dashboard stays armed for an app that's gone. The backend fix is dice-vision#408.
+**While an app is waiting, the dashboard switches to continuous capture** (`bridgeTriggeredMode` in the dashboard's `useVTTIntegration`, on by default via its "Send automatically" toggle). So the module only registers when it actually wants a roll (`_shouldWait()`):
+- **Continuous mode off (default):** `requestRoll()` (dice button, `/dv roll`) sends one `waiting`. After that roll is posted, the module sends `cancel` so the bridge forgets it too; otherwise a reloaded dashboard would see `waiting_apps: ["foundry"]` and re-arm.
+- **Continuous mode on:** re-sends `waiting` after every roll, which keeps the dashboard capturing.
+- Rolls nobody in Foundry asked for (another app on the same session was waiting) are ignored.
+
+**Only send `cancel` if we registered (`registered`).** The dashboard treats any `cancelled` broadcast as "nobody is waiting", whatever its `app`, so a stray cancel would clear Talespire's or Codex's request on a shared session. The same applies to the cancel sent before disconnecting, which older backends needed because their disconnect cleanup never removed `"foundry"` from `waiting_apps` (fixed in dice-vision#408).
 
 ## Development Workflow
 
@@ -137,9 +143,19 @@ The public API is available from the console:
 game.modules.get("dicevision").api.connect("XKRM4N7B");
 ```
 
+### Local End-to-End Testing
+
+A local Foundry server plus a fake dashboard lets you test against the live bridge without a camera:
+
+- **Foundry** (Node.js build, licensed): v14 needs Node 24. Start it with `--noupnp`, since UPnP is on by default and asks the router to expose the port. Symlink this repo to `<dataPath>/Data/modules/dicevision`, so edits apply on a page reload. A world can be created with `POST /create {action: "createWorld", id, title, system}` (admin session), then launched with `POST /setup {action: "launchWorld", world}`.
+- **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`) and stops after `--max N` rolls. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
+- **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world (users `Gamemaster` and `Player`, no passwords). It checks the dice button, continuous mode and `/dv` commands. `scripts-dev/e2e/foundry.mjs` documents its env vars; `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
+
 ## Testing Checklist
 
-- [ ] Module loads with no console errors (v12 and v13)
+- [ ] Module loads with no console errors (v12, v13, v14)
+- [ ] Continuous off: no `waiting` until the dice button / `/dv roll`; one roll posted, then `cancel`
+- [ ] Continuous on: every roll posted, `waiting` re-sent after each
 - [ ] Connect with valid session code (with and without dash)
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → rolls ignored; mode `chat` → rolls appear in chat

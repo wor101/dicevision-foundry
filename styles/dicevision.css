@@ -71,3 +71,26 @@
   font-size: 1.2em;
   color: var(--color-text-hyperlink, #ff6400);
 }
+
+/* Chat sidebar controls */
+
+.dicevision-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.dicevision-controls [data-dv="continuous"][aria-pressed="true"] {
+  color: var(--color-text-emphatic, #fff);
+  background: var(--color-warm-2, #c9593f);
+}
+
+.dicevision-controls .dicevision-waiting {
+  color: #ffb84d;
+  animation: dicevision-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dicevision-pulse {
+  50% { opacity: 0.4; }
+}
