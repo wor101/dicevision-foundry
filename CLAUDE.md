@@ -82,7 +82,10 @@ dicevision-foundry/
 ├── lang/en.json              # Localization strings (DICEVISION.*)
 ├── tests/client.test.mjs     # Client tests: node tests/client.test.mjs
 ├── scripts-dev/              # Release helpers, fake-dashboard.mjs, e2e/ (Playwright)
-├── .github/workflows/        # release.yml — tag → GitHub release
+├── .github/workflows/        # tests.yml — lint + test on PRs; release.yml — tag → GitHub release
+├── .github/dependabot.yml    # Weekly npm + Actions bumps (7-day cooldown)
+├── package.json              # Dev tooling only (ESLint); not shipped
+├── eslint.config.js          # Flat config with Foundry globals
 ├── README.md                 # User documentation
 ├── CLAUDE.md                 # This file
 ├── LICENSE                   # MIT License
@@ -91,7 +94,17 @@ dicevision-foundry/
 
 No build step — Foundry loads `scripts/module.js` directly as an ES module.
 
-Run the client tests with `node tests/client.test.mjs` (mocked Foundry globals, no install). Leave `tests/` out of release zips.
+Run the client tests with `node tests/client.test.mjs` or `npm test` (mocked Foundry globals, no install). Leave `tests/` out of release zips.
+
+Lint with `npm ci` once, then `npm run lint`. The module itself has no npm dependencies; `package.json` only holds ESLint. A Foundry global the module starts using goes in `foundryGlobals` in `eslint.config.js`.
+
+### CI and branch protection
+
+`.github/workflows/tests.yml` runs two jobs on every PR and push to `main`:
+- **`lint`**: ESLint, and JSON validity of `module.json` and `lang/*.json`.
+- **`test`**: the client tests, and a dry-run release build (stamp + zip) that checks `module.json` is at the zip root and no dev files are packed.
+
+The **Main** ruleset on `main` (same as the Codex repo) blocks deletion and force pushes, and requires a PR with 1 approval, resolved review threads, and passing `lint` and `test` checks on an up-to-date branch. Repository admins can bypass it, which is how a solo maintainer merges their own PRs. Renaming either job breaks the required check, so update the ruleset too.
 
 ## WebSocket Protocol
 

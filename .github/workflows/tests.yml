@@ -1,0 +1,58 @@
+# Lint and test every PR and every push to main. The "lint" and "test" jobs
+# are required checks in the main branch ruleset, so keep their names.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dev dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check module.json and lang files are valid JSON
+        run: |
+          for f in module.json lang/*.json; do
+            node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$f" \
+              || { echo "::error file=$f::invalid JSON"; exit 1; }
+          done
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run client tests
+        run: npm test
+
+      # The release workflow only runs on tags, so check its packaging here
+      - name: Check the release zip builds
+        run: |
+          ./scripts-dev/stamp-manifest.sh v0.0.0-ci "$GITHUB_REPOSITORY"
+          ./scripts-dev/build-zip.sh
+          unzip -l module.zip | grep -q ' module.json$' || { echo "::error::module.json missing from the zip root"; exit 1; }
+          if unzip -l module.zip | grep -E ' (tests|scripts-dev|node_modules)/'; then
+            echo "::error::dev files in the release zip"; exit 1
+          fi

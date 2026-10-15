@@ -139,7 +139,6 @@ const { registerSettings } = await import("../scripts/settings.js");
 // Harness
 // ---------------------------------------------------------------------------
 
-const PENDING = Symbol("pending");
 let failures = 0;
 let passes = 0;
 
@@ -150,11 +149,6 @@ function check(cond, msg) {
     failures++;
     console.info(`  FAIL: ${msg}`);
   }
-}
-
-/** Resolve to the promise's value if already settled, else PENDING. */
-async function settled(promise) {
-  return Promise.race([promise, new Promise(r => setImmediate(() => r(PENDING)))]);
 }
 
 const flush = () => new Promise(r => setImmediate(r));
