@@ -56,17 +56,17 @@ try {
   check((await newMessages()) === 3, 'continuous on: both rolls posted');
   check(dash.done()?.requests_after_last_roll === 1, 'continuous on: re-armed after the last roll');
 
-  // Chat commands, typed into the chat box (v14 passes hooks HTML)
+  // Chat commands, typed into the chat box (v14 passes hooks HTML). Typing
+  // is slow: turn continuous off before the dashboard connects, or it
+  // answers the continuous request first.
+  await typeChat(page, '/dv continuous off');
+  await page.waitForFunction(() => !game.settings.get('dicevision', 'continuous'), null, { timeout: 5000 });
   dash = dashboard(['--max', '1', '--dice', '1d8', '--watch', '3']);
   await dash.until('connected');
-  for (const line of ['/dv continuous off', '/dv roll']) {
-    await typeChat(page, line);
-    await page.waitForTimeout(500);
-  }
+  await typeChat(page, '/dv roll');
   await dash.exited();
-  check(dash.count('roll_sent') === 1 && dash.done()?.requests_after_last_roll === 0, '/dv roll: one roll, no request after it');
-  // One cancel from "continuous off", one releasing the bridge after the roll
-  check(dash.count('cancelled') === 2, `/dv roll: bridge released after the roll (cancelled x${dash.count('cancelled')})`);
+  check(dash.count('roll_sent') === 1 && dash.done()?.requests_after_last_roll === 0, '/dv roll (typed): one roll, no request after it');
+  check(dash.count('cancelled') === 1, `/dv roll (typed): bridge released after the roll (cancelled x${dash.count('cancelled')})`);
 
   // Shared code: the Player's release cancel must not stop the GM's continuous mode
   const player = await joinAs(browser, 'Player');
