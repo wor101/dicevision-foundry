@@ -9,6 +9,7 @@ import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
 import { registerRollIntercept, diceConfigUsesDiceVision } from "./roll-intercept.js";
+import { registerDiceSoNice } from "./dice-so-nice.js";
 
 const MODULE_ID = "dicevision";
 
@@ -22,6 +23,7 @@ Hooks.once("init", () => {
   registerSettings();
   registerChatControls(diceVisionClient);
   registerRollIntercept(diceVisionClient);
+  registerDiceSoNice();
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);

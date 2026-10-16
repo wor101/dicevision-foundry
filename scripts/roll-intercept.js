@@ -95,7 +95,20 @@ export function registerRollIntercept(client) {
         const rejected = [];
         for (const { index, value } of fills) {
           const { app, denomination } = slots[index];
-          if (!app.registerResult(METHOD_ID, denomination, value)) {
+          // Marking dice as physical is for Dice So Nice; it must never stop a fill
+          let input = null;
+          try {
+            input = nextInput(app, denomination);
+          } catch (err) {
+            console.warn("[DiceVision] Couldn't find the input to mark as physical:", err);
+          }
+          if (app.registerResult(METHOD_ID, denomination, value)) {
+            try {
+              markPhysical(app, input);
+            } catch (err) {
+              console.warn("[DiceVision] Couldn't mark a die as physical:", err);
+            }
+          } else {
             // Foundry already warns "... was not needed by the resolver"
             console.warn(`[DiceVision] Roll dialog rejected ${denomination} ${value}`);
             rejected.push({ type: denomination, value, reason: "rejected" });
@@ -197,6 +210,31 @@ function openSlots(resolvers) {
   return [...resolvers].flatMap(app => cameraInputs(app).map(input => ({
     app, input, denomination: input.parentElement.dataset.denomination
   })));
+}
+
+/** The input registerResult fills next: the first empty one of that die type, as Foundry picks it. */
+function nextInput(app, denomination) {
+  if (!app.element) return null;
+  return [...app.element.querySelectorAll(DICEVISION_INPUTS)]
+    .find(input => input.value === "" && input.parentElement.dataset.denomination === denomination);
+}
+
+/**
+ * Count a camera fill on its dice term: `options.dicevision.physical`. Term
+ * options are saved with the roll, so the chat message knows which dice were
+ * physical (see roll-data.js). Digital fills (Submit, unreadable dice) aren't
+ * counted.
+ */
+function markPhysical(app, input) {
+  const term = app.fulfillable?.get(input?.name)?.term;
+  if (!term) {
+    // Without the mark, Dice So Nice may offer these dice as a mouse throw
+    console.warn(`[DiceVision] No dice term for filled input "${input?.name}"; it won't be marked physical`);
+    return;
+  }
+  term.options ??= {};
+  term.options.dicevision ??= { physical: 0 };
+  term.options.dicevision.physical++;
 }
 
 /** Empty, enabled DiceVision inputs for dice the camera can't read. */

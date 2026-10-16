@@ -28,7 +28,7 @@ Status: ✅ verified · 🟡 expected to work, not tested · ⚠️ partial · �
 
 | Module | Version | Status | Notes |
 |---|---|---|---|
-| Dice So Nice! | 6.4.4 | ⚠️ | 3D dice land on the roll's real results, but with the world setting "Disabled for manually entered rolls" on (the default) Replace-mode rolls skip the animation. Chat-mode cards have no Roll attached, so they never animate |
+| Dice So Nice! | 6.4.4 | 🟡 | Supported from the next release (v0.3.0): Replace-mode rolls and Chat-mode roll cards (not the fallback card) animate, landing on the physical faces (local e2e: `scripts-dev/e2e/dsn.mjs`). Needs a live multi-player check. Before v0.3.0, Replace-mode rolls only animated with "Disabled for manually entered rolls" off, and Chat-mode cards never did |
 
 ## What can break
 

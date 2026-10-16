@@ -15,13 +15,16 @@
   "DICEVISION.Settings.AutoConnect.Hint": "Automatically connect to DiceVision when the world loads.",
 
   "DICEVISION.Settings.ChatVisibility.Name": "Chat Visibility",
-  "DICEVISION.Settings.ChatVisibility.Hint": "Who can see DiceVision roll messages in chat.",
+  "DICEVISION.Settings.ChatVisibility.Hint": "Chat mode only: who sees the result of DiceVision roll cards. With GM Only or Only Me, other players see that you rolled, not the result. Replace-mode rolls (/roll and sheet rolls) follow Foundry's roll mode, chosen under the chat box.",
   "DICEVISION.Settings.ChatVisibility.All": "Everyone",
   "DICEVISION.Settings.ChatVisibility.GM": "GM Only",
   "DICEVISION.Settings.ChatVisibility.Self": "Only Me",
 
   "DICEVISION.Settings.RollLabel.Name": "Roll Label",
   "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
+
+  "DICEVISION.Settings.DiceSoNice.Name": "Show 3D Dice (Dice So Nice!)",
+  "DICEVISION.Settings.DiceSoNice.Hint": "With Dice So Nice! active, show physical DiceVision rolls as 3D dice landing on the faces you rolled, for everyone. Replace-mode rolls animate even with Dice So Nice's \"Disabled for manually entered rolls\" on. Has no effect without Dice So Nice!.",
 
   "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
