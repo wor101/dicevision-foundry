@@ -240,7 +240,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Replace: roll only the missed die of an advantage roll, leaving the other in view: the new die fills the slot
 - [ ] `no_dice` (dice-vision#415): dialog notice, or one toast for a dice-button request; nothing in continuous mode
 - [ ] Replace mode with no session code / Auto-Connect off: warning on load; after giving up reconnecting: "rolls are digital" warning
-- [ ] Chat visibility: Everyone / GM Only / Only Me
+- [ ] Chat visibility: Everyone / GM Only / Only Me (Chat mode only; Replace mode follows Foundry's roll mode)
 - [ ] Changing session code in settings reconnects
 - [ ] Auto-reconnect after connection drop
 - [ ] Single die, multiple same type (3d6), mixed types (1d20 + 2d6)

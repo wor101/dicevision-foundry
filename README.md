@@ -50,7 +50,7 @@ To use physical dice only for some die types (say, d20s), set Operating Mode to 
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, so the card's total can differ from the dashboard's. A tens die (10–90) plus a units die is posted as a d100. A 00 + 0 can't be told apart from two d10s showing 0, so it posts as 2d10. If any die can't be part of a Foundry roll (such as a d3, or a tens die with no units die), the whole roll is posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result (the plain card stays hidden from them). Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
+Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, so the card's total can differ from the dashboard's. A tens die (10–90) plus a units die is posted as a d100. A 00 + 0 can't be told apart from two d10s showing 0, so it posts as 2d10. If any die can't be part of a Foundry roll (such as a d3, or a tens die with no units die), the whole roll is posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result (the plain card stays hidden from them). Replace-mode rolls don't use this setting: they follow Foundry's roll mode (Public, Private GM, Blind, Self), chosen under the chat box. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
 
 | Button | What it does |
 |--------|--------------|
@@ -97,7 +97,7 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 | **Operating Mode** | `Off`, `Chat` (post physical rolls to chat) or `Replace` (physical dice for Foundry's rolls) |
 | **Continuous Mode** | Chat and Replace mode: post every roll to chat (a roll a Foundry roll dialog is waiting for goes to the dialog) and keep the dashboard capturing (default off: one roll per request) |
 | **Auto-Connect** | Connect automatically when the world loads |
-| **Chat Visibility** | Who sees a roll's result: Everyone, GM Only, or Only Me (others see that you rolled) |
+| **Chat Visibility** | Chat mode only: who sees a roll's result: Everyone, GM Only, or Only Me (others see that you rolled). Replace-mode rolls follow Foundry's roll mode, chosen under the chat box |
 | **Roll Label** | Label shown on roll messages (default: "DiceVision") |
 | **Show 3D Dice (Dice So Nice!)** | GM, for the whole world: show DiceVision rolls as Dice So Nice 3D dice (default on; no effect without Dice So Nice) |
 
