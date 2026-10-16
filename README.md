@@ -50,7 +50,7 @@ To use physical dice only for some die types (say, d20s), set Operating Mode to 
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
+Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, and a percentile pair (a tens die showing 10–90 plus a units die) is posted as a d100, so the card's total can differ from the dashboard's in those cases. Dice Foundry can't roll (such as a d3) are posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
 
 | Button | What it does |
 |--------|--------------|
@@ -79,6 +79,16 @@ Command replies are only visible to you.
 
 Each user who rolls physical dice needs their **own** session code. If two Foundry users share a code, a roll is posted once for each user who is waiting for it, and one user cancelling (or finishing) a roll request can cancel the other's.
 
+## 3D dice (Dice So Nice!)
+
+With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physical rolls show up as 3D dice for everyone, landing on the faces you rolled. This covers Replace-mode rolls and Chat-mode cards.
+
+- Replace-mode rolls animate even with Dice So Nice's **Disabled for manually entered rolls** setting on (its default). That setting still applies to Foundry's own Manual Input rolls.
+- Dice So Nice's own options still apply: hidden NPC rolls, ghost dice for private and blind rolls, the chat message waiting for the dice to land.
+- Physical dice are never handed back for an interactive (mouse) throw.
+- The GM can turn this off with **Show 3D Dice (Dice So Nice!)** in DiceVision's settings. DiceVision rolls then behave like any manually entered roll.
+- The camera icon in a roll's tooltip marks dice that came from DiceVision.
+
 ## Settings
 
 | Setting | Description |
@@ -89,13 +99,14 @@ Each user who rolls physical dice needs their **own** session code. If two Found
 | **Auto-Connect** | Connect automatically when the world loads |
 | **Chat Visibility** | Who sees roll messages: Everyone, GM Only, or Only Me |
 | **Roll Label** | Label shown on roll messages (default: "DiceVision") |
+| **Show 3D Dice (Dice So Nice!)** | GM, for the whole world: show DiceVision rolls as Dice So Nice 3D dice (default on; no effect without Dice So Nice) |
 
 ## How It Works
 
 1. DiceVision's camera detects physical dice using a YOLO + CNN/Embedding AI pipeline
 2. Results are sent to the DiceVision backend
 3. When Foundry needs dice (a roll dialog) or you request a roll (dice button, continuous mode), this module tells the backend it is waiting; DiceVision only forwards a roll when an app is waiting
-4. The backend sends the roll over WebSocket. Replace mode enters the dice in Foundry's roll dialog through Foundry's dice fulfillment API; Chat mode posts them to chat. The module then tells the backend it's done, or keeps waiting if dice are still missing or continuous mode is on
+4. The backend sends the roll over WebSocket. Replace mode enters the dice in Foundry's roll dialog through Foundry's dice fulfillment API; Chat mode posts them to chat as a Foundry roll. The module then tells the backend it's done, or keeps waiting if dice are still missing or continuous mode is on
 
 ## API
 

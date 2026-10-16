@@ -1,9 +1,15 @@
 /**
  * Dice Bridge — Roll Conversion and Chat Display
  *
- * Converts DiceVision roll data into Foundry VTT ChatMessage objects.
- * Handles chat visibility (whisper targets) based on module settings.
+ * Posts DiceVision rolls to Foundry's chat as standard roll cards: a real
+ * Foundry roll, so the card gets Foundry's tooltip and Dice So Nice! can
+ * animate it. Dice that can't be a Foundry roll (see buildRollData) fall back
+ * to the plain DiceVision card. Handles chat visibility (whisper targets)
+ * based on module settings.
  */
+
+import { buildRollData } from "./roll-data.js";
+import { show3dDice } from "./dice-so-nice.js";
 
 const MODULE_ID = "dicevision";
 
@@ -15,13 +21,10 @@ export async function displayRollInChat(rollData) {
   const label = game.settings.get(MODULE_ID, "rollLabel");
   const visibility = game.settings.get(MODULE_ID, "chatVisibility");
 
-  const content = await formatDiceForChat(rollData, label);
-  const whisperTargets = getWhisperTargets(visibility);
-
   const messageData = {
-    content,
     speaker: { alias: label },
-    whisper: whisperTargets,
+    // A whispered roll is a private roll: other players see "rolled privately"
+    whisper: getWhisperTargets(visibility),
     flags: {
       dicevision: {
         rollId: rollData.roll_id,
@@ -31,6 +34,23 @@ export async function displayRollInChat(rollData) {
       }
     }
   };
+
+  const data = buildRollData(rollData.dice);
+  if (data) {
+    const roll = foundry.dice.Roll.fromData(data);
+    Object.assign(messageData, {
+      flavor: label,
+      content: String(roll.total),
+      rolls: [roll],
+      sound: CONFIG.sounds.dice
+    });
+    // The GM turned 3D dice off for DiceVision rolls
+    if (game.modules.get("dice-so-nice")?.active && !show3dDice()) {
+      messageData.flags["dice-so-nice"] = { skip: true };
+    }
+  } else {
+    messageData.content = await formatDiceForChat(rollData, label);
+  }
 
   await ChatMessage.create(messageData);
 }

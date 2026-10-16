@@ -17,7 +17,7 @@ DiceVision Camera → Backend → WebSocket Bridge → This Module → RollResol
 The module:
 1. Connects to `wss://dicevision.dirtyowlbear.com/api/bridge/{session_code}`
 2. Receives `roll` messages with dice data
-3. Fills an open roll dialog if one is waiting (see Replace mode below). Otherwise (Chat or Replace mode, dice button / continuous) groups dice by type, renders `templates/chat-message.hbs` and creates a `ChatMessage` (public, GM-whisper, or self-whisper per settings)
+3. Fills an open roll dialog if one is waiting (see Replace mode below). Otherwise (Chat or Replace mode, dice button / continuous) builds a real Foundry roll (`buildRollData` → `Roll.fromData`) and creates a standard roll `ChatMessage` (public, GM-whisper, or self-whisper per settings). Dice Foundry can't roll fall back to `templates/chat-message.hbs`
 
 ## Modes
 
@@ -46,6 +46,18 @@ Built on Foundry's dice fulfillment API (v12+), not a `/roll` patch, so it cover
   - Closing the dialog with X while such a die is pending leaves the roll unresolved. That's core behaviour.
 - No dialog when core skips interactive fulfillment: blind `/roll`s, `Roll#toMessage` in blind mode, `allowInteractive: false`, minimize/maximize. Systems that evaluate first still open it for blind rolls; dnd5e's sheet rolls call `roll.evaluate()` without `allowInteractive`.
 
+### Dice So Nice! (`dice-so-nice.js`, `roll-data.js`)
+
+Dice So Nice animates from the results saved in the chat message, so 3D dice land on the physical values with no forcing (unlike Codex's forcedDice). Two things would stop it, both handled while the **`diceSoNice`** world setting is on (default) and Dice So Nice is active:
+- **Replace mode.** Dice So Nice skips a message when every die's `method` is interactive ("Disabled for manually entered rolls", default on), and `dicevision` has to be interactive for the dialog to open.
+  - `DiceTerm#method` is write-once, so it can't be changed on the roll. Instead, a `preCreateChatMessage` hook on the roller's client strips `method: "dicevision"` from the message's saved rolls (`stripMethod`) before the message is saved. Every client then sees ordinary dice.
+  - A second, non-interactive method isn't an option: Core › Dice Configuration lists every registered method.
+- **Physical mark.** `roll-intercept.js` counts each camera fill on its term as `term.options.dicevision = { physical: n }`. It finds the input `registerResult` will fill (the first empty one of that type) and looks up its term via `app.fulfillable`. Digital fills (Submit, unreadable dice) aren't counted. Term options are saved with the roll.
+- **Interactive throws.** If any die was physical, the hook also sets `flags.dice-so-nice.interactive = false` (Dice So Nice's "never" flag) and clears a pending `interactiveThrow` stamp, since its own `preCreateChatMessage` hook may run first. Otherwise physical dice would come back as dice to throw with the mouse.
+- **Chat mode.** `buildRollData` turns the camera's dice into `Roll` data: one `Die` per type in read order, d10 0 → 10, a tens die (10..90) + units die → d100. It returns `null` for anything Foundry can't roll, which falls back to the template card. With the setting off, the message gets `flags.dice-so-nice.skip`.
+- **Tooltip.** Foundry only shows a method icon for interactive methods, so `renderChatMessageHTML` (v13+) puts the camera icon back on tooltip parts whose term is marked physical. It's skipped when the parts don't line up with `roll.dice`.
+- Whispered Chat-mode rolls are private rolls: other players see "rolled privately", and Dice So Nice shows them ghost dice (per its settings).
+
 ## Reference Links
 
 ### Foundry VTT Documentation
@@ -73,7 +85,9 @@ dicevision-foundry/
 │   ├── dicevision-client.js  # WebSocket client singleton, reconnect, roll consumers
 │   ├── roll-intercept.js     # Replace mode: fulfillment method + RollResolver integration
 │   ├── dice-matching.js      # Pure: physical dice → open roll slots
-│   ├── dice-bridge.js        # Roll data → ChatMessage
+│   ├── dice-bridge.js        # Chat mode: physical dice → roll ChatMessage
+│   ├── roll-data.js          # Pure: Chat-mode Roll data, strip the dicevision method
+│   ├── dice-so-nice.js       # Dice So Nice: preCreateChatMessage strip, tooltip camera icon
 │   ├── chat-controls.js      # Chat sidebar buttons + /dv commands (v14 passes the hook HTML: plainText())
 │   └── settings.js           # game.settings registration (all client-scoped)
 ├── templates/
@@ -194,6 +208,12 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`; fixed values `d20=17`; a different roll each time `"d20=12;d6=2"`) and stops after `--max N` rolls. `--no-dice N` answers the first N requests with `no_dice`. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
 - **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world as `Gamemaster` (the world also has a `Player` user for manual two-user tests; neither has a password). It checks the dice button, continuous mode and `/dv` commands.
 - **`scripts-dev/e2e/replace.mjs CODE`**: Replace mode end to end: mixed dice in one roll, partial rolls, wrong dice, the `no_dice` notice (needs a bridge with dice-vision#415), exploding dice, percentile, a dnd5e advantage `D20Roll`, Mode Off with per-die Dice Configuration, Submit as digital fallback, and digital rolls while disconnected. Set `FOUNDRY_USER=Player` if someone is logged in as the GM (Foundry allows one session per user).
+- **`scripts-dev/e2e/dsn.mjs CODE`**: Dice So Nice end to end. Needs Dice So Nice in `Data/modules`; it enables it in the world and leaves it on. Runs as the GM. It records Dice So Nice's own animate decision (`diceSoNiceMessagePreProcess`), so it doesn't depend on WebGL. Checks:
+  - a Replace roll (method stripped, marked physical, animates, tooltip icons)
+  - interactive throws "on"
+  - Chat-mode roll cards, public and GM-only
+  - the setting off: Chat-mode cards are skipped, and Replace rolls are left to Dice So Nice's manual-roll setting
+- Updating the module from Foundry (or The Forge-style manifest install) on the local server replaces the repo symlink with a real folder. Re-link it before testing a branch.
 - `scripts-dev/e2e/foundry.mjs` documents the env vars (including `FOUNDRY_USER` for replace.mjs); `PLAYWRIGHT_MODULE` can point at an existing Playwright install, e.g. dice-vision's `frontend/node_modules/playwright/index.mjs`.
 
 ## Testing Checklist
@@ -219,6 +239,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Auto-reconnect after connection drop
 - [ ] Single die, multiple same type (3d6), mixed types (1d20 + 2d6)
 - [ ] All die types: d4, d6, d8, d10, d12, d20, percentile
+- [ ] Dice So Nice: Replace and Chat-mode rolls animate for every player and land on the physical faces; private and blind rolls follow Dice So Nice's rules; the setting off stops it
 
 Per-system and per-module results (dnd5e, Shadowdark, Dice So Nice!, …) are tracked in `docs/SYSTEM_COMPATIBILITY.md`.
 

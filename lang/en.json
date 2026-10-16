@@ -23,6 +23,9 @@
   "DICEVISION.Settings.RollLabel.Name": "Roll Label",
   "DICEVISION.Settings.RollLabel.Hint": "Label displayed on DiceVision roll messages in chat.",
 
+  "DICEVISION.Settings.DiceSoNice.Name": "Show 3D Dice (Dice So Nice!)",
+  "DICEVISION.Settings.DiceSoNice.Hint": "With Dice So Nice! active, show physical DiceVision rolls as 3D dice landing on the faces you rolled, for everyone. Replace-mode rolls animate even with Dice So Nice's \"Disabled for manually entered rolls\" on. Has no effect without Dice So Nice!.",
+
   "DICEVISION.Notifications.Connected": "DiceVision connected to session {code}",
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
   "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",

@@ -2,7 +2,8 @@ const MODULE_ID = "dicevision";
 
 /**
  * Register all DiceVision module settings.
- * All settings are scope: "client" (per-user, not per-world).
+ * Settings are scope: "client" (per-user), except diceSoNice, which the GM
+ * sets for the world (like Dice So Nice's own settings).
  */
 export function registerSettings() {
   game.settings.register(MODULE_ID, "sessionCode", {
@@ -76,5 +77,14 @@ export function registerSettings() {
     config: true,
     type: String,
     default: "DiceVision"
+  });
+
+  game.settings.register(MODULE_ID, "diceSoNice", {
+    name: "DICEVISION.Settings.DiceSoNice.Name",
+    hint: "DICEVISION.Settings.DiceSoNice.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
   });
 }
