@@ -86,6 +86,7 @@ dicevision-foundry/
 ├── .github/dependabot.yml    # Weekly npm + Actions bumps (7-day cooldown)
 ├── package.json              # Dev tooling only (ESLint); not shipped
 ├── eslint.config.js          # Flat config with Foundry globals
+├── docs/SYSTEM_COMPATIBILITY.md  # Game system / module checklist
 ├── README.md                 # User documentation
 ├── CLAUDE.md                 # This file
 ├── LICENSE                   # MIT License
@@ -218,6 +219,8 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Auto-reconnect after connection drop
 - [ ] Single die, multiple same type (3d6), mixed types (1d20 + 2d6)
 - [ ] All die types: d4, d6, d8, d10, d12, d20, percentile
+
+Per-system and per-module results (dnd5e, Shadowdark, Dice So Nice!, …) are tracked in `docs/SYSTEM_COMPATIBILITY.md`.
 
 ## Deployment
 
