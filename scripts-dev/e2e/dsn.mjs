@@ -86,8 +86,14 @@ try {
     await page.waitForTimeout(1500);
     return page.evaluate(async (id) => {
       const message = game.messages.get(id);
-      const html = await message.renderHTML();
       const dice = message.rolls.flatMap(r => r.dice);
+      // Systems may replace Foundry's tooltip (dnd5e's roll breakdown has no
+      // method icons), so check the icons against core's tooltip template
+      const { addCameraIcons } = await import('/modules/dicevision/scripts/dice-so-nice.js');
+      const html = document.createElement('div');
+      html.innerHTML = await foundry.applications.handlebars.renderTemplate('templates/dice/tooltip.hbs',
+        { parts: dice.map(d => d.getTooltipData()) });
+      addCameraIcons(message, html);
       return {
         formula: message.rolls[0].formula,
         total: message.rolls[0].total,

@@ -87,7 +87,7 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 - Dice So Nice's own options still apply: hidden NPC rolls, ghost dice for private and blind rolls, the chat message waiting for the dice to land.
 - Physical dice are never handed back for an interactive (mouse) throw.
 - The GM can turn this off with **Show 3D Dice (Dice So Nice!)** in DiceVision's settings. DiceVision rolls then behave like any manually entered roll.
-- The camera icon in a roll's tooltip marks dice that came from DiceVision.
+- The camera icon in a roll's tooltip marks dice that came from DiceVision. Systems with their own roll tooltip, such as dnd5e, don't show it.
 
 ## Settings
 
