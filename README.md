@@ -50,7 +50,7 @@ To use physical dice only for some die types (say, d20s), set Operating Mode to 
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, and a percentile pair (a tens die showing 10–90 plus a units die) is posted as a d100, so the card's total can differ from the dashboard's in those cases. Dice Foundry can't roll (such as a d3) are posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
+Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, so the card's total can differ from the dashboard's. A tens die (10–90) plus a units die is posted as a d100. A 00 + 0 can't be told apart from two d10s showing 0, so it posts as 2d10. If any die can't be part of a Foundry roll (such as a d3, or a tens die with no units die), the whole roll is posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result (the plain card stays hidden from them). Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
 
 | Button | What it does |
 |--------|--------------|
@@ -83,11 +83,11 @@ Each user who rolls physical dice needs their **own** session code. If two Found
 
 With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physical rolls show up as 3D dice for everyone, landing on the faces you rolled. This covers Replace-mode rolls and Chat-mode cards.
 
-- Replace-mode rolls animate even with Dice So Nice's **Disabled for manually entered rolls** setting on (its default). That setting still applies to Foundry's own Manual Input rolls.
+- Replace-mode rolls animate even with Dice So Nice's **Disabled for manually entered rolls** setting on (its default). That setting still applies to Foundry's own Manual Input rolls, unless they share a roll with DiceVision dice.
 - Dice So Nice's own options still apply: hidden NPC rolls, ghost dice for private and blind rolls, the chat message waiting for the dice to land.
 - Physical dice are never handed back for an interactive (mouse) throw.
-- The GM can turn this off with **Show 3D Dice (Dice So Nice!)** in DiceVision's settings. DiceVision rolls then behave like any manually entered roll.
-- The camera icon in a roll's tooltip marks dice that came from DiceVision. Systems with their own roll tooltip, such as dnd5e, don't show it.
+- The GM can turn this off with **Show 3D Dice (Dice So Nice!)** in DiceVision's settings. Replace-mode rolls then follow Dice So Nice's Disabled for manually entered rolls setting, and Chat-mode cards don't animate.
+- On Foundry v13 and later, the camera icon in a roll's tooltip marks dice with at least one die from the camera (in Foundry's tooltip and dnd5e's roll breakdown).
 
 ## Settings
 
@@ -97,7 +97,7 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 | **Operating Mode** | `Off`, `Chat` (post physical rolls to chat) or `Replace` (physical dice for Foundry's rolls) |
 | **Continuous Mode** | Chat and Replace mode: post every roll to chat (a roll a Foundry roll dialog is waiting for goes to the dialog) and keep the dashboard capturing (default off: one roll per request) |
 | **Auto-Connect** | Connect automatically when the world loads |
-| **Chat Visibility** | Who sees roll messages: Everyone, GM Only, or Only Me |
+| **Chat Visibility** | Who sees a roll's result: Everyone, GM Only, or Only Me (others see that you rolled) |
 | **Roll Label** | Label shown on roll messages (default: "DiceVision") |
 | **Show 3D Dice (Dice So Nice!)** | GM, for the whole world: show DiceVision rolls as Dice So Nice 3D dice (default on; no effect without Dice So Nice) |
 

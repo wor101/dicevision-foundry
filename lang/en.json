@@ -15,7 +15,7 @@
   "DICEVISION.Settings.AutoConnect.Hint": "Automatically connect to DiceVision when the world loads.",
 
   "DICEVISION.Settings.ChatVisibility.Name": "Chat Visibility",
-  "DICEVISION.Settings.ChatVisibility.Hint": "Who can see DiceVision roll messages in chat.",
+  "DICEVISION.Settings.ChatVisibility.Hint": "Who sees the result of DiceVision rolls in chat. With GM Only or Only Me, other players see that you rolled, not the result.",
   "DICEVISION.Settings.ChatVisibility.All": "Everyone",
   "DICEVISION.Settings.ChatVisibility.GM": "GM Only",
   "DICEVISION.Settings.ChatVisibility.Self": "Only Me",

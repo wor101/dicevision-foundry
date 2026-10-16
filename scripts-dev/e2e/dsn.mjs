@@ -87,13 +87,15 @@ try {
     return page.evaluate(async (id) => {
       const message = game.messages.get(id);
       const dice = message.rolls.flatMap(r => r.dice);
-      // Systems may replace Foundry's tooltip (dnd5e's roll breakdown has no
-      // method icons), so check the icons against core's tooltip template
+      // Systems may replace Foundry's tooltip with their own layout (dnd5e's
+      // roll breakdown), so check core's tooltip template too
       const { addCameraIcons } = await import('/modules/dicevision/scripts/dice-so-nice.js');
       const html = document.createElement('div');
       html.innerHTML = await foundry.applications.handlebars.renderTemplate('templates/dice/tooltip.hbs',
         { parts: dice.map(d => d.getTooltipData()) });
       addCameraIcons(message, html);
+      // And as the system renders it (dnd5e: its roll breakdown)
+      const rendered = await message.renderHTML();
       return {
         formula: message.rolls[0].formula,
         total: message.rolls[0].total,
@@ -101,6 +103,9 @@ try {
         physical: dice.map(d => d.options?.dicevision?.physical ?? 0),
         animate: globalThis.__dsn[id],
         icons: html.querySelectorAll('.dice-tooltip .part-method').length,
+        systemIcons: rendered.querySelectorAll('.dice-tooltip .part-method').length,
+        content: message.content,
+        dashboardTotal: message.flags.dicevision?.total,
         flags: message.flags['dice-so-nice'] ?? null,
         whisper: message.whisper.length,
         flavor: message.flavor
@@ -119,6 +124,20 @@ try {
   check(JSON.stringify(msg.physical) === '[2,1]', `replace: dice marked physical ${JSON.stringify(msg.physical)}`);
   check(msg.animate === true, `replace: Dice So Nice animates (${msg.animate})`);
   check(msg.icons === 2, `replace: camera icon on both tooltip parts (${msg.icons})`);
+  check(msg.systemIcons === 2, `replace: camera icons in the system's own tooltip, e.g. dnd5e's breakdown (${msg.systemIcons})`);
+
+  // Submit with no camera dice: digital dice animate, and interactive
+  // throws stay allowed for them
+  dash = dashboard(['--max', '1', '--dice', 'd20=20', '--delay', '60000']);
+  await dash.until('connected');
+  await chatCommand('/roll 1d20');
+  await page.waitForSelector('.roll-resolver', { timeout: 10000 });
+  await dash.until('waiting');
+  await page.click('.roll-resolver button[type="submit"]');
+  msg = await nextRollMessage();
+  dash.kill();
+  check(msg.methods[0] === null && msg.physical[0] === 0 && msg.animate === true && msg.flags?.interactive !== false && msg.icons === 0,
+    `replace, Submit (digital): animates, no camera icon, throws allowed (${JSON.stringify(msg)})`);
 
   // Interactive throws on: physical dice aren't handed back for a mouse throw
   await page.evaluate(() => game.settings.set('dice-so-nice', 'interactiveThrows', '2'));
@@ -128,22 +147,32 @@ try {
   msg = await nextRollMessage();
   await dash.exited();
   check(msg.flags?.interactive === false && msg.flags?.interactiveThrow?.state !== 'pending',
-    `interactive throws on: not a pending throw ${JSON.stringify(msg.flags)}`);
-  await page.evaluate(() => game.settings.set('dice-so-nice', 'interactiveThrows', '1'));
-
-  // Chat mode: a standard roll card with a real roll
+    `interactive throws on, replace: not a pending throw ${JSON.stringify(msg.flags)}`);
   await page.evaluate(() => game.settings.set('dicevision', 'mode', 'chat'));
   await page.waitForTimeout(300);
-  dash = dashboard(['--max', '1', '--dice', 'd20=12,d6=3,d10=30,d10=7', '--watch', '2']);
+  dash = dashboard(['--max', '1', '--dice', 'd20=8', '--watch', '2']);
   await dash.until('connected');
   await mark();
   await page.evaluate(() => game.modules.get('dicevision').api.requestRoll());
   msg = await nextRollMessage();
   await dash.exited();
-  check(msg.formula === '1d20 + 1d6 + 1d100' && msg.total === 52, `chat: roll card ${msg.formula} = ${msg.total}`);
+  check(msg.flags?.interactive === false && msg.flags?.interactiveThrow?.state !== 'pending',
+    `interactive throws on, chat: not a pending throw ${JSON.stringify(msg.flags)}`);
+  await page.evaluate(() => game.settings.set('dice-so-nice', 'interactiveThrows', '1'));
+
+  // Chat mode: a standard roll card with a real roll. A d10 "0" counts as
+  // 10, so the card total differs from the dashboard's
+  dash = dashboard(['--max', '1', '--dice', 'd20=12,d6=3,d6=5,d10=30,d10=7,d10=0', '--watch', '2']);
+  await dash.until('connected');
+  await mark();
+  await page.evaluate(() => game.modules.get('dicevision').api.requestRoll());
+  msg = await nextRollMessage();
+  await dash.exited();
+  check(msg.formula === '1d20 + 2d6 + 1d100 + 1d10' && msg.total === 67, `chat: roll card ${msg.formula} = ${msg.total}`);
+  check(msg.content === '67' && msg.dashboardTotal === 57, `chat: card total 67, dashboard total kept in flags (${msg.content}, ${msg.dashboardTotal})`);
   check(msg.flavor === 'DiceVision', `chat: roll label as flavor (${msg.flavor})`);
   check(msg.animate === true, `chat: Dice So Nice animates (${msg.animate})`);
-  check(msg.icons === 3, `chat: camera icons in the tooltip (${msg.icons})`);
+  check(msg.icons === 4 && msg.systemIcons === 4, `chat: camera icons in the tooltip (${msg.icons}, system ${msg.systemIcons})`);
 
   // Chat mode, GM Only: a private roll
   await page.evaluate(() => game.settings.set('dicevision', 'chatVisibility', 'gm'));

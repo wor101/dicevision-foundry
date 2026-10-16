@@ -28,7 +28,7 @@ Status: ✅ verified · 🟡 expected to work, not tested · ⚠️ partial · �
 
 | Module | Version | Status | Notes |
 |---|---|---|---|
-| Dice So Nice! | 6.4.4 | 🟡 | Supported since v0.3.0: Replace and Chat-mode rolls animate, landing on the physical faces (local e2e: `scripts-dev/e2e/dsn.mjs`). Needs a live multi-player check. Before v0.3.0, Replace-mode rolls only animated with "Disabled for manually entered rolls" off, and Chat-mode cards never did |
+| Dice So Nice! | 6.4.4 | 🟡 | Supported from the next release (v0.3.0): Replace-mode rolls and Chat-mode roll cards (not the fallback card) animate, landing on the physical faces (local e2e: `scripts-dev/e2e/dsn.mjs`). Needs a live multi-player check. Before v0.3.0, Replace-mode rolls only animated with "Disabled for manually entered rolls" off, and Chat-mode cards never did |
 
 ## What can break
 

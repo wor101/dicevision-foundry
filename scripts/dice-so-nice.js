@@ -11,8 +11,11 @@
  *   Dice So Nice animates them, with its own visibility rules still applying.
  * - Chat mode: cards need a real roll attached (dice-bridge.js).
  *
+ * Either way, physical dice opt out of Dice So Nice's interactive throws,
+ * which would otherwise ask for them to be thrown again with the mouse.
+ *
  * Removing the method also drops Foundry's camera icon from the roll
- * tooltip, so it's added back for terms marked `options.dicevision`.
+ * tooltip, so it's added (back) for terms with `options.dicevision.physical`.
  */
 
 import { METHOD_ID } from "./roll-intercept.js";
@@ -29,10 +32,16 @@ export function show3dDice() {
   return !!game.modules.get(DSN_ID)?.active && game.settings.get(MODULE_ID, "diceSoNice") !== false;
 }
 
+/** Dice So Nice's "never an interactive throw" flag on a message. */
+export const NO_INTERACTIVE_THROW = { [`flags.${DSN_ID}.interactive`]: false };
+
 export function registerDiceSoNice() {
   Hooks.on("preCreateChatMessage", (message, _data, _options, userId) => {
-    if (userId !== game.user.id || !show3dDice()) return;
+    if (userId !== game.user.id) return;
     try {
+      // Every message this user creates passes through here: only touch
+      // ones with DiceVision dice
+      if (!show3dDice() || !hasDiceVisionDice(message)) return;
       const { rolls, changed, physical } = stripMethod(message._source.rolls, METHOD_ID);
       if (!changed) return;
       const update = { rolls };
@@ -40,13 +49,13 @@ export function registerDiceSoNice() {
         // Dice So Nice's interactive throws would ask for physical dice to be
         // thrown again with the mouse. false is its "never interactive" flag;
         // a pending stamp is cleared in case its hook ran before this one.
-        update[`flags.${DSN_ID}.interactive`] = false;
+        Object.assign(update, NO_INTERACTIVE_THROW);
         if (message.getFlag?.(DSN_ID, "interactiveThrow")) update[`flags.${DSN_ID}.interactiveThrow`] = null;
       }
       message.updateSource(update);
     } catch (err) {
-      // The roll still posts, just without 3D dice
-      console.error("[DiceVision] Couldn't prepare the roll for Dice So Nice:", err);
+      // The roll still posts; Dice So Nice treats it as a manually entered roll
+      console.error(`[DiceVision] Couldn't prepare roll message "${message.flavor ?? ""}" for Dice So Nice:`, err);
     }
   });
 
@@ -59,26 +68,41 @@ export function registerDiceSoNice() {
   });
 }
 
+/** Whether a message's rolls have dice filled through the DiceVision method. */
+function hasDiceVisionDice(message) {
+  return (message.rolls ?? []).some(roll => (roll.dice ?? []).some(term => term.method === METHOD_ID));
+}
+
 /**
- * Put the camera icon back on tooltip parts for dice from the camera.
- * Foundry renders one tooltip part per die term, in roll.dice order; when the
- * counts don't line up (a system's own card layout), leave the tooltip alone.
+ * Put the camera icon on tooltip parts for dice from the camera, where
+ * Foundry would show a method icon. One tooltip part per die term, in
+ * roll.dice order:
+ * - core's tooltip: the icon goes in the part's `.part-header`
+ * - dnd5e's roll breakdown: first in the part's `.dice`; its modifier parts
+ *   (`.constant-term`) aren't dice
+ * When the parts don't line up with the dice (some other layout), the
+ * tooltip is left alone.
  */
 export function addCameraIcons(message, html) {
   const dice = (message.rolls ?? []).flatMap(roll => roll.dice ?? []);
-  if (!dice.some(term => term.options?.dicevision)) return;
-  const parts = [...(html?.querySelectorAll?.(".dice-tooltip .tooltip-part") ?? [])];
-  if (parts.length !== dice.length) return;
+  if (!dice.some(term => term.options?.dicevision?.physical)) return;
+  const iconHTML = CONFIG.Dice.fulfillment.methods[METHOD_ID]?.icon;
+  if (!iconHTML) return;
+  const parts = [...(html?.querySelectorAll?.(".dice-tooltip .tooltip-part:not(.constant-term)") ?? [])];
+  if (parts.length !== dice.length) {
+    console.debug(`[DiceVision] Roll tooltip has ${parts.length} parts for ${dice.length} dice terms; no camera icons`);
+    return;
+  }
   const label = game.i18n.localize("DICEVISION.Fulfillment.Label");
   parts.forEach((part, i) => {
     if (!dice[i].options?.dicevision?.physical) return;
-    const header = part.querySelector(".part-header");
-    if (!header || header.querySelector(".part-method")) return;
+    const container = part.querySelector(".part-header") ?? part.querySelector(".dice");
+    if (!container || container.querySelector(".part-method")) return;
     const icon = document.createElement("span");
     icon.className = "part-method";
     icon.dataset.tooltip = "";
     icon.setAttribute("aria-label", label);
-    icon.innerHTML = CONFIG.Dice.fulfillment.methods[METHOD_ID]?.icon ?? "";
-    header.prepend(icon);
+    icon.innerHTML = iconHTML;
+    container.prepend(icon);
   });
 }

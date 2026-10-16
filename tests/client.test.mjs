@@ -1593,10 +1593,10 @@ await test("chat falls back to the DiceVision card for dice Foundry can't roll",
   check(content.total === 9 && content.diceCount === 3, "total and dice count");
 });
 
-await test("chat roll: Dice So Nice skip flag only when the GM turned 3D dice off", async (c) => {
+await test("chat roll: Dice So Nice never offers it as a mouse throw; skipped when the GM turned 3D dice off", async (c) => {
   activeModules.add("dice-so-nice");
   let msg = await postRoll(c, ROLL.data);
-  check(!msg.flags["dice-so-nice"], `setting on: ${JSON.stringify(msg.flags)}`);
+  check(JSON.stringify(msg.flags["dice-so-nice"]) === '{"interactive":false}', `setting on: ${JSON.stringify(msg.flags)}`);
   settings.diceSoNice = false;
   msg = await postRoll(c, ROLL.data);
   check(msg.flags["dice-so-nice"]?.skip === true, `setting off: ${JSON.stringify(msg.flags)}`);
@@ -2101,7 +2101,7 @@ await test("buildRollData: one term per type in read order, summed", () => {
   check(data.terms[0].options.dicevision.physical === 2, "marked physical");
 });
 
-await test("buildRollData: d10 0 is 10; tens + units make a d100; 00 + 0 is 100", () => {
+await test("buildRollData: d10 0 is 10; tens + units make a d100; 00 + 0 stays two d10s", () => {
   check(JSON.stringify(dieTerms(buildRollData(read(["d10", 0])))) === "[[10,10]]", "d10 0 → 10");
   let data = buildRollData(read(["d10", 7], ["d10", 30]));
   check(data.formula === "1d100" && data.total === 37, `${data.formula} = ${data.total}`);
@@ -2139,10 +2139,24 @@ await test("stripMethod: removes the method at any depth and reports physical di
   check(!stripMethod([{ terms: [{ method: "manual" }] }], "dicevision").changed, "nothing to change");
 });
 
+await test("buildRollData: several percentile pairs, an unpaired tens die, a tens die with a 0", () => {
+  let data = buildRollData(read(["d10", 30], ["d10", 5], ["d10", 40], ["d10", 6]));
+  check(data.formula === "2d100" && JSON.stringify(dieTerms(data)) === "[[100,35,46]]" && data.total === 81,
+    `two pairs ${data.formula} ${JSON.stringify(dieTerms(data))} = ${data.total}`);
+  check(buildRollData(read(["d10", 30], ["d10", 40], ["d10", 5])) === null, "second tens die unpaired: whole roll falls back");
+  data = buildRollData(read(["d10", 30], ["d10", 0]));
+  check(data.formula === "1d100" && data.total === 30, `tens + "0" is a d100 of 30 (${data.formula} = ${data.total})`);
+  data = buildRollData(read(["d100", 12], ["d10", 50], ["d10", 1]));
+  check(JSON.stringify(dieTerms(data)) === "[[100,12,51]]", `d100-typed die and a pair share one term ${JSON.stringify(dieTerms(data))}`);
+  check(buildRollData(read(["D20", 7])).formula === "1d20", "type case doesn't matter");
+});
+
 /** A ChatMessage stand-in for preCreateChatMessage */
 function fakeMessage(rolls, flags = {}) {
   return {
     _source: { rolls: rolls.map(r => JSON.stringify(r)) },
+    // Roll#dice stand-in: the top-level dice terms
+    rolls: rolls.map(r => ({ dice: r.terms.filter(t => "method" in t || t.class === "Die") })),
     updates: [],
     updateSource(update) { this.updates.push(update); },
     getFlag: (scope, key) => flags[scope]?.[key]
@@ -2182,27 +2196,87 @@ await test("preCreateChatMessage: left alone without Dice So Nice, with 3D off, 
   check(digital.updates[0] && !("flags.dice-so-nice.interactive" in digital.updates[0]), "all-digital dice: stripped, interactive throws allowed");
 });
 
+await test("preCreateChatMessage: no pending stamp to clear; text messages and other modules' rolls untouched", () => {
+  activeModules.add("dice-so-nice");
+  registerDiceSoNice();
+  const msg = fakeMessage([physicalRoll]);
+  Hooks.callAll("preCreateChatMessage", msg, {}, {}, "u1");
+  check(msg.updates[0] && !("flags.dice-so-nice.interactiveThrow" in msg.updates[0]), `no stamp: ${JSON.stringify(msg.updates[0])}`);
+  const text = { _source: { rolls: [] }, rolls: [], updates: [], updateSource(u) { this.updates.push(u); } };
+  Hooks.callAll("preCreateChatMessage", text, {}, {}, "u1");
+  check(text.updates.length === 0, "text message untouched");
+  const other = fakeMessage([{ terms: [{ class: "Die", method: "bluetooth", options: {} }] }]);
+  other._source.rolls = ["{broken roll from another module"];
+  let threw = false;
+  try { Hooks.callAll("preCreateChatMessage", other, {}, {}, "u1"); } catch { threw = true; }
+  check(!threw && other.updates.length === 0, "another module's roll isn't parsed");
+});
+
+await test("renderChatMessageHTML: the hook adds icons, and a failure doesn't break chat rendering", () => {
+  registerDiceSoNice();
+  globalThis.CONFIG.Dice = { fulfillment: { methods: { [METHOD_ID]: { icon: "<i>cam</i>" } } } };
+  globalThis.document = { createElement: () => ({ dataset: {}, setAttribute(k, v) { this[k] = v; } }) };
+  try {
+    const html = fakeTooltip(1);
+    Hooks.callAll("renderChatMessageHTML", { rolls: [{ dice: [{ options: { dicevision: { physical: 1 } } }] }] }, html);
+    check(html.parts[0].header.children.length === 1, "icon added through the hook");
+    let threw = false;
+    const broken = { querySelectorAll: () => { throw new Error("detached"); } };
+    try { Hooks.callAll("renderChatMessageHTML", { rolls: [{ dice: [{ options: { dicevision: { physical: 1 } } }] }] }, broken); } catch { threw = true; }
+    check(!threw, "no throw");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+await test("chat roll: Foundry rejecting the roll data still posts the plain card", async (c) => {
+  globalThis.foundry.dice.Roll.fromData = () => { throw new Error("unknown term class"); };
+  const msg = await postRoll(c, ROLL.data);
+  check(msg && !msg.rolls && JSON.parse(msg.content).total === 15, `fallback card ${JSON.stringify(msg)}`);
+});
+
+await test("diceSoNice setting: world-scoped Boolean, on by default", () => {
+  const registered = {};
+  const saved = game.settings.register;
+  game.settings.register = (_m, key, config) => { registered[key] = config; };
+  try {
+    registerSettings();
+  } finally {
+    game.settings.register = saved;
+  }
+  const s = registered.diceSoNice;
+  check(s?.scope === "world" && s.type === Boolean && s.default === true && s.config === true, JSON.stringify(s));
+});
+
 await test("preCreateChatMessage: a broken roll doesn't block the message", () => {
   activeModules.add("dice-so-nice");
   registerDiceSoNice();
-  const msg = fakeMessage([]);
+  const msg = fakeMessage([physicalRoll]);
   msg._source.rolls = ["{not json"];
   let threw = false;
   try { Hooks.callAll("preCreateChatMessage", msg, {}, {}, "u1"); } catch { threw = true; }
   check(!threw && msg.updates.length === 0, "no throw, no update");
 });
 
-/** Tooltip parts the way Foundry renders them, with or without a method icon */
-function fakeTooltip(count, withIcon = []) {
+/**
+ * Tooltip parts, with or without a method icon. core: the icon goes in
+ * `.part-header`; dnd5e: in `.dice`, plus modifier parts (`.constant-term`).
+ */
+function fakeTooltip(count, withIcon = [], { layout = "core", constants = 0 } = {}) {
   const parts = Array.from({ length: count }, (_, i) => {
     const header = {
       children: withIcon.includes(i) ? [{ className: "part-method" }] : [],
       querySelector(sel) { return sel === ".part-method" ? this.children.find(c => c.className === "part-method") ?? null : null; },
       prepend(node) { this.children.unshift(node); }
     };
-    return { header, querySelector: sel => (sel === ".part-header" ? header : null) };
+    const own = layout === "core" ? ".part-header" : ".dice";
+    return { header, querySelector: sel => (sel === own ? header : null) };
   });
-  return { parts, querySelectorAll: sel => (sel === ".dice-tooltip .tooltip-part" ? parts : []) };
+  return {
+    parts,
+    querySelectorAll: sel => (sel === ".dice-tooltip .tooltip-part:not(.constant-term)" ? parts
+      : sel === ".dice-tooltip .tooltip-part" ? [...parts, ...Array.from({ length: constants }, () => ({}))] : [])
+  };
 }
 
 await test("addCameraIcons: camera icon on physical dice only, never doubled", () => {
@@ -2218,9 +2292,49 @@ await test("addCameraIcons: camera icon on physical dice only, never doubled", (
     const mismatched = fakeTooltip(2);
     addCameraIcons(message, mismatched);
     check(mismatched.parts.every(p => p.header.children.length === 0), "part count mismatch: untouched");
+    const dnd5e = fakeTooltip(3, [], { layout: "dnd5e", constants: 1 });
+    addCameraIcons(message, dnd5e);
+    const dnd5eIcons = dnd5e.parts.map(p => p.header.children.length);
+    check(JSON.stringify(dnd5eIcons) === "[1,0,1]", `dnd5e breakdown (with a modifier part): icons in .dice ${JSON.stringify(dnd5eIcons)}`);
+    CONFIG.Dice.fulfillment.methods[METHOD_ID] = {};
+    const noIcon = fakeTooltip(3);
+    addCameraIcons(message, noIcon);
+    check(noIcon.parts.every(p => p.header.children.length === 0), "no method icon: nothing inserted");
   } finally {
     delete globalThis.document;
   }
+});
+
+await interceptTest("several camera fills and an explosion on one term all count on it", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  // Foundry names every input of a term (explosions too) after the term
+  const app = fakeResolver(["d6", "d6"]);
+  const term = { randomFace: () => 2 };
+  app.element.querySelectorAll("input").forEach(i => { i.name = "t0"; });
+  app.fulfillable.clear();
+  app.fulfillable.set("t0", { term });
+  open(app);
+  ws.recv(rollOf(["d6", 6], ["d6", 3]));
+  await flush();
+  check(term.options?.dicevision?.physical === 2, `two fills: ${JSON.stringify(term.options)}`);
+  app.addExtraDie("d6", "t0");
+  Hooks.callAll("renderRollResolver", app);
+  ws.recv(rollOf(["d6", 4]));
+  await flush();
+  check(term.options?.dicevision?.physical === 3, `explosion counted on the same term: ${JSON.stringify(term.options)}`);
+});
+
+await interceptTest("a broken input lookup doesn't stop the dice filling", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  app.fulfillable.set("t0", { get term() { throw new Error("frozen term"); } });
+  open(app);
+  ws.recv(rollOf(["d20", 13]));
+  await flush();
+  check(JSON.stringify(app.values()) === '["13"]', `filled anyway ${JSON.stringify(app.values())}`);
+  check(!toasts.some(([kind]) => kind === "error"), `no error toast ${JSON.stringify(toasts)}`);
 });
 
 await interceptTest("camera fills are counted on their dice term; digital fills aren't", async (c) => {

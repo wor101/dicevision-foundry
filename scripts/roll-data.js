@@ -14,14 +14,14 @@ import { SUPPORTED_DICE } from "./dice-matching.js";
  *
  * One term per die type in the order first read, joined with "+". A d10 "0"
  * counts as 10, as in Replace mode. A percentile tens die (a d10 reading
- * 10..90) pairs with a units d10 (0..9) into a d100, with 00 + 0 = 100; a d10
- * "00" arrives as 0 and is indistinguishable from a d10 "0", so only an
- * unambiguous tens die starts a pair.
+ * 10..90) pairs with a units d10 (0..9) into a d100. A "00" arrives as 0, the
+ * same as a d10 "0", so a 00 + 0 pair can't be recognised here and posts as
+ * two d10s of 10 (Replace mode knows when a d100 is wanted and makes it 100).
  *
  * @param {{type: string, value: number}[]} dice
  * @returns {object|null} Roll data for Roll.fromData, or null when a die
  *   can't be a Foundry die (unknown type, out-of-range value, unpaired tens
- *   die): the caller keeps the plain DiceVision card then
+ *   die): the caller posts the whole roll as the plain DiceVision card
  */
 export function buildRollData(dice) {
   const pool = (dice ?? []).map(d => ({ type: String(d.type).toLowerCase(), value: Number(d.value) }));
@@ -30,14 +30,9 @@ export function buildRollData(dice) {
   const isTens = d => d.type === "d10" && d.value % 10 === 0 && d.value >= 10 && d.value <= 90;
   const isUnits = d => d.type === "d10" && Number.isInteger(d.value) && d.value >= 0 && d.value <= 9;
 
-  /** @type {Map<number, {at: number, results: number[]}>} faces → results; at: first die's read position */
-  const groups = new Map();
-  const add = (faces, value, at) => {
-    if (!groups.has(faces)) groups.set(faces, { at, results: [] });
-    const group = groups.get(faces);
-    group.at = Math.min(group.at, at);
-    group.results.push(value);
-  };
+  /** Each die's faces and value, with its read position (a pair: its first die's) */
+  const read = [];
+  const add = (faces, value, at) => read.push({ faces, value, at });
 
   // Pair each tens die with a units die first, so a units die isn't used up
   // as a plain d10
@@ -46,7 +41,7 @@ export function buildRollData(dice) {
     const units = pool.find(d => d !== tens && !used.has(d) && !isTens(d) && isUnits(d));
     if (!units) return null;
     used.add(tens).add(units);
-    add(100, tens.value + units.value || 100, Math.min(pool.indexOf(tens), pool.indexOf(units)));
+    add(100, tens.value + units.value, Math.min(pool.indexOf(tens), pool.indexOf(units)));
   }
 
   for (const [at, die] of pool.entries()) {
@@ -57,7 +52,13 @@ export function buildRollData(dice) {
     add(faces, value, at);
   }
 
-  const order = [...groups].sort(([, a], [, b]) => a.at - b.at);
+  // Groups and results in the order read
+  const groups = new Map();
+  for (const { faces, value } of read.sort((a, b) => a.at - b.at)) {
+    if (!groups.has(faces)) groups.set(faces, { results: [] });
+    groups.get(faces).results.push(value);
+  }
+  const order = [...groups];
   const terms = [];
   let total = 0;
   for (const [faces, { results }] of order) {
@@ -89,7 +90,7 @@ export function buildRollData(dice) {
  * @param {(string|object)[]} rolls  A ChatMessage's source rolls (JSON strings or data)
  * @param {string} method            The method to remove ("dicevision")
  * @returns {{rolls: object[], changed: boolean, physical: boolean}}
- *   rolls: the edited data; physical: whether any result came from the camera
+ *   rolls: the edited data; physical: whether any stripped term is marked physical
  */
 export function stripMethod(rolls, method) {
   let changed = false;

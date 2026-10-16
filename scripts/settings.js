@@ -3,7 +3,7 @@ const MODULE_ID = "dicevision";
 /**
  * Register all DiceVision module settings.
  * Settings are scope: "client" (per-user), except diceSoNice, which the GM
- * sets for the world (like Dice So Nice's own settings).
+ * sets for the world (like Dice So Nice's "Disabled for manually entered rolls").
  */
 export function registerSettings() {
   game.settings.register(MODULE_ID, "sessionCode", {

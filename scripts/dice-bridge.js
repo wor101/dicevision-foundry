@@ -3,8 +3,8 @@
  *
  * Posts DiceVision rolls to Foundry's chat as standard roll cards: a real
  * Foundry roll, so the card gets Foundry's tooltip and Dice So Nice! can
- * animate it. Dice that can't be a Foundry roll (see buildRollData) fall back
- * to the plain DiceVision card. Handles chat visibility (whisper targets)
+ * animate it. If any die can't be part of a Foundry roll (see buildRollData),
+ * the whole roll falls back to the plain DiceVision card. Handles chat visibility (whisper targets)
  * based on module settings.
  */
 
@@ -23,7 +23,8 @@ export async function displayRollInChat(rollData) {
 
   const messageData = {
     speaker: { alias: label },
-    // A whispered roll is a private roll: other players see "rolled privately"
+    // A whispered roll card is a private roll: other players see that you
+    // rolled, not the result. The fallback card stays hidden from them.
     whisper: getWhisperTargets(visibility),
     flags: {
       dicevision: {
@@ -35,24 +36,43 @@ export async function displayRollInChat(rollData) {
     }
   };
 
-  const data = buildRollData(rollData.dice);
-  if (data) {
-    const roll = foundry.dice.Roll.fromData(data);
+  const roll = buildRoll(rollData.dice);
+  if (roll) {
     Object.assign(messageData, {
       flavor: label,
       content: String(roll.total),
       rolls: [roll],
       sound: CONFIG.sounds.dice
     });
-    // The GM turned 3D dice off for DiceVision rolls
-    if (game.modules.get("dice-so-nice")?.active && !show3dDice()) {
-      messageData.flags["dice-so-nice"] = { skip: true };
+    if (game.modules.get("dice-so-nice")?.active) {
+      // Animate, but never ask for the physical dice to be thrown again with
+      // the mouse; or skip it if the GM turned 3D dice off
+      messageData.flags["dice-so-nice"] = show3dDice() ? { interactive: false } : { skip: true };
     }
   } else {
     messageData.content = await formatDiceForChat(rollData, label);
   }
 
   await ChatMessage.create(messageData);
+}
+
+/**
+ * A Foundry roll of the dice, or null to post the plain card instead (no
+ * roll tooltip or 3D dice): a die Foundry can't roll, or Foundry rejecting
+ * the roll data. Never throws, so the roll always reaches chat.
+ */
+function buildRoll(dice) {
+  const data = buildRollData(dice);
+  if (!data) {
+    console.info("[DiceVision] Posting the plain card: these dice can't be a Foundry roll (no 3D dice):", dice);
+    return null;
+  }
+  try {
+    return foundry.dice.Roll.fromData(data);
+  } catch (err) {
+    console.warn("[DiceVision] Foundry rejected the roll data; posting the plain card (no 3D dice):", err, data);
+    return null;
+  }
 }
 
 /**
