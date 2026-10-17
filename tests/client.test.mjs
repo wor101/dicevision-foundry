@@ -2035,7 +2035,7 @@ await interceptTest("an unreadable die with no term says to click Submit, not 'a
   const app = fakeResolver(["d3"]);
   app.fulfillable.delete("t0");
   open(app);
-  check(app.status() === 'DICEVISION.Fulfillment.Unreadable {"dice":"1d3"}', `status ${app.status()}`);
+  check(app.status() === 'DICEVISION.Fulfillment.Unsupported {"dice":"1d3"}', `status ${app.status()}`);
 });
 
 await interceptTest("a dialog that fails to update toasts once", (c) => {
@@ -2374,9 +2374,10 @@ await test("faceNumber and readDice read every server shape", () => {
     { type: "d12", value: "unknown" },
     { type: "d6", value: 3, face: "3", readable: false }
   ]);
-  check(JSON.stringify(tens) === '{"type":"d10","value":0,"face":"00","readable":true}', `tens ${JSON.stringify(tens)}`);
+  check(JSON.stringify(tens) === '{"type":"d10","value":0,"face":"00","readable":true,"legacy":false}', `tens ${JSON.stringify(tens)}`);
   check(pip.value === 4 && pip.face === "pip_4" && pip.readable, `pip ${JSON.stringify(pip)}`);
-  check(old.value === 15 && old.face === "15" && old.readable, `old server ${JSON.stringify(old)}`);
+  check(old.value === 15 && old.face === "15" && old.readable && old.legacy, `old server ${JSON.stringify(old)}`);
+  check(pip.legacy && !tens.legacy, "legacy only when the server sent no face");
   check(!unread.readable && unread.value === -1, `unreadable ${JSON.stringify(unread)}`);
   check(!symbol.readable && symbol.value === -1, `unknown symbol ${JSON.stringify(symbol)}`);
   check(!flagged.readable, "readable: false wins over a number");
@@ -2410,7 +2411,9 @@ await test("describeUnused: names faces as printed, unreadable dice by type", ()
     { ...vtt("d10", "00"), reason: "not-needed" },
     { ...vtt("d20", "-1", false), reason: "unreadable" }
   ]);
-  check(text.includes('"d10 (00)"') && /CouldntRead \{"dice":"d20"\}/.test(text), text);
+  check(text.includes('"d10 (00)"') && /CouldntRead \{"dice":"1d20"\}/.test(text), text);
+  const two = describeUnused([{ ...vtt("d8", "-1", false), reason: "unreadable" }, { ...vtt("d8", "-1", false), reason: "unreadable" }]);
+  check(/\{"dice":"2d8"\}/.test(two), `counted, not "d8, d8": ${two}`);
 });
 
 await test("buildRollData: faces make 00 + 0 a d100 of 100, and a lone 10 a d10", () => {
@@ -2439,7 +2442,8 @@ await test("chat request: an unreadable die isn't posted, warns, and keeps waiti
   ws.recv(rollOfFaces(vtt("d20", "17"), vtt("d8", "-1", false)));
   await flush();
   check(chat.length === 0, "not posted");
-  check(toasts.at(-1)?.[0] === "warn" && toasts.at(-1)[1] === 'DICEVISION.Notifications.CouldntRead {"dice":"d8"}', `toasts ${JSON.stringify(toasts)}`);
+  const warns = toasts.filter(([kind]) => kind === "warn");
+  check(warns.length === 1 && warns[0][1] === 'DICEVISION.Notifications.CouldntRead {"dice":"1d8"}', `toasts ${JSON.stringify(toasts)}`);
   check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
   check(c.getState().waiting, "still waiting");
   ws.recv(rollOfFaces(vtt("d20", "17"), vtt("d8", "6")));
@@ -2453,7 +2457,9 @@ await test("chat: the stored dice carry face and readable", async (c) => {
   c.requestRoll();
   ws.recv(rollOfFaces(vtt("d10", "00"), vtt("d10", "0")));
   await flush();
-  check(chat[0]?.flags.dicevision.dice[0]?.face === "00" && chat[0].rolls?.[0]?.total === 100, JSON.stringify(chat[0]?.flags));
+  const stored = chat[0]?.flags.dicevision.dice;
+  check(stored?.[0]?.face === "00" && stored[1]?.face === "0" && stored.every(d => d.readable === true) && chat[0].rolls?.[0]?.total === 100,
+    JSON.stringify(chat[0]?.flags));
 });
 
 await interceptTest("replace: an unreadable die is reported in the dialog and its slot keeps waiting", async (c) => {
@@ -2465,7 +2471,7 @@ await interceptTest("replace: an unreadable die is reported in the dialog and it
   ws.recv(rollOfFaces(vtt("d20", "-1", false), vtt("d6", "pip_2")));
   await flush();
   check(JSON.stringify(app.values()) === '["","2"]', `values ${JSON.stringify(app.values())}`);
-  check(/CouldntRead \{"dice":"d20"\}/.test(app.notice() ?? ""), `notice ${app.notice()}`);
+  check(/CouldntRead \{"dice":"1d20"\}/.test(app.notice() ?? ""), `notice ${app.notice()}`);
   check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
   ws.recv(rollOfFaces(vtt("d20", "19"), vtt("d6", "pip_2")));
   await flush();
@@ -2480,6 +2486,132 @@ await interceptTest("replace: 00 + 0 fills a d100 with 100", async (c) => {
   ws.recv(rollOfFaces(vtt("d10", "0"), vtt("d10", "00")));
   await flush();
   check(JSON.stringify(app.values()) === '["100"]', `values ${JSON.stringify(app.values())}`);
+  check(app.notice() === undefined && !toasts.some(([kind]) => kind === "warn"), `no warning ${app.notice()} ${JSON.stringify(toasts)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Review fixes: unreadable dice in pairs and batches, malformed input
+// ---------------------------------------------------------------------------
+
+await test("matchDice: an unreadable tens die never lets a units 0 stand in for it", () => {
+  const r = matchDice([vtt("d10", "-1", false), vtt("d10", "0"), vtt("d10", "7")], ["d100", "d10"]);
+  check(!r.fills.some(f => f.index === 0), `d100 left open ${JSON.stringify(r.fills)}`);
+  check(r.unused.some(d => d.reason === "unreadable" && d.type === "d10"), `unreadable d10 reported ${JSON.stringify(r.unused)}`);
+  check(filled([vtt("d10", "0"), vtt("d10", "5")], ["d100"]).values[0] === undefined, `faced "0" + "5" isn't a pair`);
+  check(filled([die("d10", 0), die("d10", 5)], ["d100"]).values[0] === 5, "a server without faces: 0 + 5 still reads as 00 + 5");
+});
+
+await test("matchDice: an unreadable die the roll doesn't need is ignored, not reported", () => {
+  let r = matchDice([vtt("d20", "-1", false), vtt("d20", "17")], ["d20"]);
+  check(r.fills[0]?.value === 17 && r.unused.length === 0 && r.ignored.length === 1, `slot already filled ${JSON.stringify(r)}`);
+  r = matchDice([vtt("d20", "-1", false), vtt("d6", "3"), vtt("d6", "4")], ["d6", "d6"]);
+  check(r.fills.length === 2 && r.unused.length === 0 && r.ignored[0]?.type === "d20", `the attack's d20 during damage ${JSON.stringify(r)}`);
+  r = matchDice([vtt("d10", "00", false), vtt("d10", "7")], ["d100"]);
+  const reasons = r.unused.map(d => d.reason).sort();
+  check(JSON.stringify(reasons) === '["missing-pair","unreadable"]' && !r.fills.length, `unreadable tens die for a d100 ${JSON.stringify(r.unused)}`);
+});
+
+await test("matchDice and buildRollData: more 00 cases", () => {
+  check(filled([vtt("d10", "00")], ["d10"]).values[0] === 10, "a lone 00 fills a d10 with 10");
+  const r = matchDice([vtt("d10", "00"), vtt("d10", "0")], ["d100"]);
+  check(r.fills[0]?.value === 100 && r.unused.length === 0 && r.ignored.length === 0, `00 + 0, nothing left over ${JSON.stringify(r)}`);
+  const data = buildRollData([vtt("d10", "00"), vtt("d10", "00"), vtt("d10", "0")]);
+  check(data?.formula === "1d100 + 1d10" && data.total === 110, `00 + 00 + 0: ${data?.formula} = ${data?.total}`);
+});
+
+await test("dropCarriedOver: a die flagged unreadable isn't carried even when its face matches", () => {
+  const flagged = { type: "d20", value: 15, face: "15", readable: false };
+  const { dice, carried } = dropCarriedOver([flagged], [vtt("d20", "15")], []);
+  check(carried.length === 0 && dice.length === 1 && !dice[0].readable, JSON.stringify({ dice, carried }));
+  const beside = dropCarriedOver([vtt("d20", "15"), vtt("d20", "-1", false)], [vtt("d20", "15")], ["d20"]);
+  check(beside.carried[0]?.face === "15" && beside.dice.length === 1 && !beside.dice[0].readable,
+    `the old 15 is still dropped beside an unreadable d20 ${JSON.stringify(beside)}`);
+});
+
+await test("readDice: malformed entries read as unreadable dice, never throw", () => {
+  const read = readDice([null, 5, { value: 3 }, { type: " ", value: 2 }, { type: "d6", value: "7", readable: "false" }]);
+  check(read.length === 5, `length ${read.length}`);
+  check(!read[0].readable && !read[1].readable && read[0].type === "d?", `null and numbers ${JSON.stringify(read.slice(0, 2))}`);
+  check(read[2].type === "d?" && read[3].type === "d?", `missing or blank type ${JSON.stringify(read.slice(2, 4))}`);
+  check(!read[4].readable, `readable "false" (a string) isn't readable ${JSON.stringify(read[4])}`);
+  check(readDice({}).length === 0 && readDice("d20").length === 0, "a non-array is no dice");
+  const once = readDice([{ type: "D10", value: 0 }, vtt("d10", "00"), { type: "d6", value: "pip_4" }, vtt("d8", "-1", false)]);
+  check(JSON.stringify(readDice(once)) === JSON.stringify(once), `safe to read twice ${JSON.stringify(once)}`);
+});
+
+await test("chat: a roll with no dice list isn't posted, warns, and keeps waiting", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  ws.sent = [];
+  ws.recv({ type: "roll", data: { total: 0 } });
+  ws.recv({ type: "roll", data: { dice: {}, total: 0 } });
+  await flush();
+  check(chat.length === 0, "not posted");
+  const warns = toasts.filter(([kind]) => kind === "warn");
+  check(warns.length === 1 && warns[0][1] === "DICEVISION.Notifications.EmptyRoll", `one warning ${JSON.stringify(warns)}`);
+  check(ws.sentTypes().filter(t => t === "waiting").length === 2 && c.getState().waiting, `re-armed ${JSON.stringify(ws.sentTypes())}`);
+  ws.recv(ROLL);
+  await flush();
+  check(chat.length === 1 && !c.getState().waiting, "the next roll posts");
+});
+
+await test("chat: a null die entry is reported, not thrown on", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  ws.recv(rollOfFaces(null, vtt("d20", "5")));
+  await flush();
+  check(chat.length === 0 && c.getState().waiting, "not posted, still waiting");
+  check(toasts.at(-1)?.[1] === 'DICEVISION.Notifications.CouldntRead {"dice":"1d?"}', `toasts ${JSON.stringify(toasts)}`);
+});
+
+await test("continuous: an unreadable die left on the table warns once until a usable roll", async (c) => {
+  const ws = connectConfirmed(c);
+  ws.sent = [];
+  const stuck = rollOfFaces(vtt("d20", "12"), vtt("d6", "-1", false));
+  ws.recv(stuck);
+  ws.recv(stuck);
+  ws.recv(stuck);
+  await flush();
+  const warns = () => toasts.filter(([kind, m]) => kind === "warn" && m.startsWith("DICEVISION.Notifications.CouldntRead"));
+  check(chat.length === 0 && warns().length === 1, `chat ${chat.length}, warnings ${warns().length}`);
+  check(ws.sentTypes().filter(t => t === "waiting").length === 3, `re-armed each time ${JSON.stringify(ws.sentTypes())}`);
+  ws.recv(rollOfFaces(vtt("d20", "12"), vtt("d6", "2")));
+  await flush();
+  check(chat.length === 1, "a usable roll posts");
+  ws.recv(stuck);
+  await flush();
+  check(warns().length === 2, "warns again after a usable roll");
+});
+
+await interceptTest("a roll dialog takes an unreadable roll before a pending chat request; one warning", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  const app = fakeResolver(["d20"]);
+  open(app);
+  toasts = [];
+  ws.recv(rollOfFaces(vtt("d20", "-1", false)));
+  await flush();
+  const warns = toasts.filter(([kind]) => kind === "warn");
+  check(chat.length === 0 && warns.length === 1 && /Fulfillment\.CouldntRead/.test(warns[0][1]), `one dialog warning ${JSON.stringify(warns)}`);
+  ws.recv(rollOfFaces(vtt("d20", "9")));
+  await flush();
+  check(JSON.stringify(app.values()) === '["9"]', `dialog filled ${JSON.stringify(app.values())}`);
+  ws.recv(rollOfFaces(vtt("d8", "4")));
+  await flush();
+  check(chat.length === 1, "the chat request gets the next roll");
+});
+
+await interceptTest("replace: a roll with no dice list shows EmptyRoll and keeps waiting", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20"]);
+  open(app);
+  ws.sent = [];
+  ws.recv({ type: "roll", data: { total: 0 } });
+  await flush();
+  check(app.notice() === "DICEVISION.Fulfillment.EmptyRoll", `notice ${app.notice()}`);
+  check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);

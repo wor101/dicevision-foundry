@@ -8,7 +8,7 @@
  */
 
 import { displayRollInChat } from "./dice-bridge.js";
-import { readDice } from "./dice-matching.js";
+import { readDice, summarize } from "./dice-matching.js";
 
 const MODULE_ID = "dicevision";
 const APP_ID = "foundry";
@@ -34,6 +34,8 @@ export class DiceVisionClient {
     this.registered = false;
     // A "no dice detected" toast was shown for the current chat request
     this.noDiceShown = false;
+    // The chat "couldn't read" warning was shown since the last usable roll
+    this.unusableShown = false;
     // Server error messages already shown, so a repeat doesn't toast again
     this.shownErrors = new Set();
     this._setupHooks();
@@ -267,6 +269,7 @@ export class DiceVisionClient {
 
     this.pendingChatRoll = true;
     this.noDiceShown = false;
+    this.unusableShown = false;
     if (!this.sendWaiting()) {
       this.pendingChatRoll = false;
       ui.notifications.warn(game.i18n.localize("DICEVISION.Notifications.NotConnected"));
@@ -395,10 +398,9 @@ export class DiceVisionClient {
     if (!rollData) return;
 
     console.log("[DiceVision] Roll received:", rollData);
-    if (!Array.isArray(rollData.dice)) {
-      console.warn("[DiceVision] Ignoring a roll with no dice list:", rollData);
-      return;
-    }
+    // Read as no dice, so it still goes through the re-arm below: the
+    // dashboard dropped its waiting flag when it sent this
+    if (!Array.isArray(rollData.dice)) console.warn("[DiceVision] Roll has no dice list, reading it as no dice:", rollData);
     rollData = { ...rollData, dice: readDice(rollData.dice) };
 
     const wasRegistered = this.registered;
@@ -406,10 +408,12 @@ export class DiceVisionClient {
     // chat if one was requested (Chat or Replace mode)
     const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
     const postToChat = !consumer && this._wantsChatRoll();
-    // A die the camera couldn't read would post a wrong roll: keep waiting
-    // for the reroll instead (a roll dialog reports it in the dialog)
+    // A die the camera couldn't read would post a wrong roll, and no dice
+    // would post an empty one: keep waiting for the reroll instead (a roll
+    // dialog reports these in the dialog)
     const unreadable = postToChat ? rollData.dice.filter(d => !d.readable) : [];
-    if (postToChat && !unreadable.length) this.pendingChatRoll = false;
+    const unusable = postToChat && (!rollData.dice.length || unreadable.length > 0);
+    if (postToChat && !unusable) this.pendingChatRoll = false;
 
     if (consumer) {
       try {
@@ -444,12 +448,19 @@ export class DiceVisionClient {
       return;
     }
 
-    if (unreadable.length) {
-      ui.notifications.warn(game.i18n.format("DICEVISION.Notifications.CouldntRead", {
-        dice: unreadable.map(d => d.type).join(", ")
-      }));
+    if (unusable) {
+      console.warn("[DiceVision] Not posting a roll with unreadable or no dice:", rollData.dice);
+      // Once until a usable roll: in continuous mode a die left on the table
+      // would otherwise warn on every capture
+      if (!this.unusableShown) {
+        this.unusableShown = true;
+        ui.notifications.warn(unreadable.length
+          ? game.i18n.format("DICEVISION.Notifications.CouldntRead", { dice: summarize(unreadable.map(d => d.type)) })
+          : game.i18n.localize("DICEVISION.Notifications.EmptyRoll"));
+      }
       return;
     }
+    this.unusableShown = false;
 
     displayRollInChat(rollData).catch((err) => {
       console.error("[DiceVision] Failed to display roll:", err);

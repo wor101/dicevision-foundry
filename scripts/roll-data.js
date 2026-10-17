@@ -19,12 +19,15 @@ import { SUPPORTED_DICE, readDice, isTensFace, isUnitsFace } from "./dice-matchi
  * read as a plain d10's 10 (a d10 printed 1-10 shows "10"), others make the
  * whole roll fall back. A pair the camera can't tell apart from a percentile
  * roll ("10" + "4" from a 1-10 d10 and a 0-9 d10) posts as a d100; Replace
- * mode knows what the roll wants.
+ * mode knows what the roll wants. Telling "00" from "0" needs face strings:
+ * from a server without them a "00" reads as "0", so 00 + 0 posts as two
+ * d10s (unlike Replace mode, there's no "0"-for-"00" fallback here).
  *
  * @param {object[]} dice  What the camera read (see readDice)
  * @returns {object|null} Roll data for Roll.fromData, or null when a die
- *   can't be a Foundry die (unreadable, unknown type, out-of-range value,
- *   unpaired tens die): the caller posts the whole roll as the plain
+ *   can't be a Foundry die (unknown type, out-of-range value, a tens die
+ *   from 20 to 90 with no units die, or an unreadable die, though the client
+ *   doesn't post those at all): the caller posts the whole roll as the plain
  *   DiceVision card
  */
 export function buildRollData(dice) {

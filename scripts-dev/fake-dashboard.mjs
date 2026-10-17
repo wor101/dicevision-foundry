@@ -11,7 +11,8 @@
 //                 to send different dice each time (the last spec repeats):
 //                 "d20=12;d6=2" sends a d20 of 12, then a d6 of 2.
 //                 A fixed value is the face as printed: d10=00, d6=pip_4,
-//                 or d8=-1 for a die the camera couldn't read.
+//                 or d8=-1 for a die the camera couldn't read (any other
+//                 symbol, e.g. d8=skull, is also sent as unreadable).
 //   --max N       Stop after sending N rolls (default 1; 0 = unlimited)
 //   --delay MS    Wait before answering a request (default 500)
 //   --no-dice N   First answer N times with "no_dice" (recognition found

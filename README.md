@@ -39,11 +39,11 @@ Every Foundry roll waits for your physical dice while DiceVision is connected. T
 - **Missing dice:** the dialog fills what it can and waits for the rest. You can roll just the missing dice and leave the others where they are: dice still showing the same value as last time are recognised as already used.
 - **Wrong or extra dice** are ignored, with a warning in the dialog. Roll again.
 - **No dice detected:** the dialog says so and keeps waiting. Roll again in view of the camera.
-- **A die the camera couldn't read** fills nothing: the dialog names it and keeps waiting. Roll it again.
+- **A die the camera couldn't read** fills nothing: the dialog names it and keeps waiting. Roll it again. One the roll doesn't need (the attack's d20 during the damage roll) is ignored.
 - **Percentile:** roll two d10s (a tens die and a units die) for a d100. 00 + 0 is 100. A d10 showing 0 counts as 10, and a d10 printed 1–10 works as is.
 - **Exploding dice and rerolls** ask for another die.
 - **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally. For an extra die from an explosion or reroll, click the arrow next to it.
-- Dice the camera can't read (d2, d3, coins) are rolled digitally, and a notice says so.
+- Die types DiceVision doesn't support (d2, d3, coins) are rolled digitally, and a notice says so.
 - **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, an invalid session code, or once reconnecting gives up, Foundry rolls digitally as usual, and a warning says so.
 - Blind `/roll`s are rolled digitally by Foundry.
 
@@ -51,7 +51,7 @@ To use physical dice only for some die types (say, d20s), set Operating Mode to 
 
 ## Chat mode
 
-Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, so the card's total can differ from the dashboard's. A tens die (00, 10–90) plus a units die (0–9) is posted as a d100, so 00 + 0 is 100. A lone 10 or 00 is posted as a d10 of 10. A d10 printed 1–10 showing 10, rolled with a 0–9 d10, looks exactly like a percentile pair, so it posts as a d100 too; use Replace mode, which knows what the roll wants. If the camera couldn't read a die, nothing is posted: a warning names the die and the request keeps waiting for the reroll. If any die can't be part of a Foundry roll (such as a d3, or a tens die from 20 to 90 with no units die), the whole roll is posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result (the plain card stays hidden from them). Replace-mode rolls don't use this setting: they follow Foundry's roll mode (Public, Private GM, Blind, Self), chosen under the chat box. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
+Chat mode posts physical rolls to chat, outside of any Foundry roll, as standard Foundry roll cards (with the usual dice tooltip). A d10 showing 0 counts as 10, so the card's total can differ from the dashboard's. A tens die (00, 10–90) plus a units die (0–9) is posted as a d100, so 00 + 0 is 100. A lone 10 or 00 is posted as a d10 of 10. A d10 printed 1–10 showing 10, rolled with a 0–9 d10, looks exactly like a percentile pair, so it posts as a d100 too; use Replace mode, which knows what the roll wants. If the camera couldn't read a die, nothing is posted: a warning names the die (once, until a roll posts) and the request keeps waiting for the reroll; in continuous mode, move a die you aren't rolling out of view. If any die can't be part of a Foundry roll (such as a d3, or a tens die from 20 to 90 with no units die), the whole roll is posted as a plain DiceVision card instead. With **Chat Visibility** set to GM Only or Only Me, the card is a private roll: other players see that you rolled, not the result (the plain card stays hidden from them). Replace-mode rolls don't use this setting: they follow Foundry's roll mode (Public, Private GM, Blind, Self), chosen under the chat box. Two buttons appear next to the chat message-mode buttons, in Chat and Replace mode. A Foundry roll dialog waiting for dice takes a roll first; a dice-button request then waits for the next one.
 
 | Button | What it does |
 |--------|--------------|
