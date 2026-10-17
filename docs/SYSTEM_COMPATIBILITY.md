@@ -12,7 +12,7 @@ Status: ✅ verified · 🟡 expected to work, not tested · ⚠️ partial · �
 | System | Version | Foundry | Status | What to check | Notes |
 |---|---|---|---|---|---|
 | D&D 5e (`dnd5e`) | 6.0.6 | v14 | ✅ | `/roll`, advantage, attack → damage from the item card | Advantage is written `2d20adv`. Verified live and in `scripts-dev/e2e/replace.mjs` |
-| Shadowdark | ? | v14 | ✅ | Sheet attack and check rolls | Tested by hand; fill in the version and which rolls were covered |
+| Shadowdark | 4.0.6 | v14 | ✅ | Sheet attack and check rolls; Chat-mode cards | Replace mode tested by hand on the Forge. Chat-mode cards before v0.3.2 showed only the formula: they were core `Roll` cards, and Shadowdark's styling hid their total. Now they use Shadowdark's `RollSD` (checked locally) |
 | Pathfinder 2e (`pf2e`) | | | 🟡 | Strike, damage, saves, Fortune/Misfortune (2d20kh/kl) | |
 | Savage Worlds (`swade`) | | | 🟡 | Trait roll with Wild Die, aces (exploding) | Explosions add inputs: check the dialog asks for each extra die |
 | Pathfinder 1e (`pf1`) | | | 🟡 | Attack, damage, saves | |

@@ -60,6 +60,12 @@ export async function displayRollInChat(rollData) {
  * A Foundry roll of the dice, or null to post the plain card instead (no
  * roll tooltip or 3D dice): a die Foundry can't roll, or Foundry rejecting
  * the roll data. Never throws, so the roll always reaches chat.
+ *
+ * The roll is made with the game system's own roll class
+ * (CONFIG.Dice.rolls[0]), so the card is drawn the way the system draws its
+ * rolls. Shadowdark's RollSD has its own card template; a core Roll card there
+ * gets Shadowdark's styling with core's layout, which pushes the total out of
+ * view. If the system's class rejects the data, core's Roll is tried next.
  */
 function buildRoll(dice) {
   const data = buildRollData(dice);
@@ -67,8 +73,18 @@ function buildRoll(dice) {
     console.info("[DiceVision] Posting the plain card: these dice can't be a Foundry roll (no 3D dice):", dice);
     return null;
   }
+  const CoreRoll = foundry.dice.Roll;
+  const SystemRoll = CONFIG.Dice?.rolls?.[0];
+  if (SystemRoll && SystemRoll !== CoreRoll) {
+    try {
+      // fromData picks the class by name from CONFIG.Dice.rolls
+      return SystemRoll.fromData({ ...data, class: SystemRoll.name });
+    } catch (err) {
+      console.warn(`[DiceVision] The system's roll class (${SystemRoll.name}) rejected the roll data; trying core Roll:`, err, data);
+    }
+  }
   try {
-    return foundry.dice.Roll.fromData(data);
+    return CoreRoll.fromData(data);
   } catch (err) {
     console.warn("[DiceVision] Foundry rejected the roll data; posting the plain card (no 3D dice):", err, data);
     return null;

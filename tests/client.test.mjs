@@ -2236,6 +2236,28 @@ await test("chat roll: Foundry rejecting the roll data still posts the plain car
   check(msg && !msg.rolls && JSON.parse(msg.content).total === 15, `fallback card ${JSON.stringify(msg)}`);
 });
 
+await test("chat roll: made with the system's roll class (CONFIG.Dice.rolls[0]), e.g. Shadowdark's RollSD", async (c) => {
+  const made = [];
+  const RollSD = { name: "RollSD", fromData: (data) => { made.push(data.class); return { data, total: data.total, dice: data.terms.filter(t => t.class === "Die") }; } };
+  globalThis.CONFIG.Dice = { rolls: [RollSD] };
+  try {
+    const msg = await postRoll(c, ROLL.data);
+    check(JSON.stringify(made) === '["RollSD"]' && msg.rolls?.[0]?.data.class === "RollSD", `class ${JSON.stringify(made)}`);
+  } finally {
+    delete globalThis.CONFIG.Dice;
+  }
+});
+
+await test("chat roll: the system's class rejecting the data falls back to core Roll", async (c) => {
+  globalThis.CONFIG.Dice = { rolls: [{ name: "Picky", fromData: () => { throw new Error("needs options"); } }] };
+  try {
+    const msg = await postRoll(c, ROLL.data);
+    check(msg.rolls?.[0]?.data.class === "Roll" && msg.content === "15", `core roll card ${JSON.stringify(msg)}`);
+  } finally {
+    delete globalThis.CONFIG.Dice;
+  }
+});
+
 await test("diceSoNice setting: world-scoped Boolean, on by default", () => {
   const registered = {};
   const saved = game.settings.register;
