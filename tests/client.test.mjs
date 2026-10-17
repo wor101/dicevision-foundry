@@ -2236,6 +2236,71 @@ await test("chat roll: Foundry rejecting the roll data still posts the plain car
   check(msg && !msg.rolls && JSON.parse(msg.content).total === 15, `fallback card ${JSON.stringify(msg)}`);
 });
 
+/**
+ * A system roll class stand-in (e.g. Shadowdark's RollSD), registered as
+ * CONFIG.Dice.rolls[0]. Core Roll.fromData redirects saved data to it by
+ * class name, as Foundry does. `breaks` makes one check fail.
+ */
+function systemRollClass(name, breaks = {}) {
+  const calls = { fromData: 0, render: [] };
+  const System = class {
+    constructor(data) {
+      Object.assign(this, { data, _evaluated: !breaks.unevaluated, dice: data.terms.filter(t => t.class === "Die") });
+      this.total = breaks.total ?? data.total;
+    }
+    static fromData(data) {
+      calls.fromData++;
+      if (breaks.fromData) throw new Error("needs options");
+      return new System(data);
+    }
+    toJSON() { return { ...this.data, class: breaks.reloadAs ?? name }; }
+    async render(options = {}) {
+      calls.render.push(options.isPrivate ? "private" : "public");
+      if (breaks.render) throw new Error("template needs options.type");
+      return "<div class='dice-roll'></div>";
+    }
+  };
+  Object.defineProperty(System, "name", { value: name });
+  const core = globalThis.foundry.dice.Roll.fromData;
+  globalThis.foundry.dice.Roll.fromData = data => (data.class === name ? System.fromData(data) : core(data));
+  globalThis.CONFIG.Dice = { rolls: [System] };
+  return { System, calls };
+}
+
+await test("chat roll: made with the system's roll class (CONFIG.Dice.rolls[0]), e.g. Shadowdark's RollSD", async (c) => {
+  const { System, calls } = systemRollClass("RollSD");
+  const msg = await postRoll(c, ROLL.data);
+  const roll = msg.rolls?.[0];
+  check(roll instanceof System && roll.data.class === "RollSD", `system roll ${JSON.stringify(roll?.data)}`);
+  check(JSON.stringify(calls.render) === '["public","private"]', `drawn both ways before use ${JSON.stringify(calls.render)}`);
+  check(msg.content === "15" && msg.flags["dice-so-nice"] === undefined, `content ${msg.content}`);
+});
+
+await test("chat roll: a system roll that fails a check falls back to core Roll", async (c) => {
+  for (const breaks of [{ fromData: true }, { render: true }, { total: 3 }, { reloadAs: "Other" }, { unevaluated: true }]) {
+    reset();
+    systemRollClass("Picky", breaks);
+    const msg = await postRoll(c, ROLL.data);
+    check(msg?.rolls?.[0]?.data?.class === "Roll" && msg.content === "15", `${JSON.stringify(breaks)}: core roll card ${JSON.stringify(msg?.rolls?.[0]?.data?.class)}`);
+  }
+});
+
+await test("chat roll: the system class and core Roll both failing still post the plain card", async (c) => {
+  systemRollClass("Picky", { fromData: true });
+  globalThis.foundry.dice.Roll.fromData = () => { throw new Error("unknown term class"); };
+  const msg = await postRoll(c, ROLL.data);
+  check(msg && !msg.rolls && JSON.parse(msg.content).total === 15, `plain card ${JSON.stringify(msg)}`);
+});
+
+await test("chat roll: when the system's class is core Roll, it's built once", async (c) => {
+  let calls = 0;
+  const core = globalThis.foundry.dice.Roll.fromData;
+  globalThis.foundry.dice.Roll.fromData = (data) => { calls++; return core(data); };
+  globalThis.CONFIG.Dice = { rolls: [globalThis.foundry.dice.Roll] };
+  const msg = await postRoll(c, ROLL.data);
+  check(calls === 1 && msg.rolls?.[0]?.data.class === "Roll", `fromData calls ${calls}`);
+});
+
 await test("diceSoNice setting: world-scoped Boolean, on by default", () => {
   const registered = {};
   const saved = game.settings.register;

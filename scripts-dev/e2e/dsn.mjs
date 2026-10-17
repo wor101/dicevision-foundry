@@ -98,6 +98,8 @@ try {
       const rendered = await message.renderHTML();
       return {
         formula: message.rolls[0].formula,
+        rollClass: message.rolls[0].constructor.name,
+        systemClass: CONFIG.Dice.rolls[0].name,
         total: message.rolls[0].total,
         methods: dice.map(d => d.method ?? null),
         physical: dice.map(d => d.options?.dicevision?.physical ?? 0),
@@ -171,6 +173,7 @@ try {
   check(msg.formula === '1d20 + 2d6 + 1d100 + 1d10' && msg.total === 67, `chat: roll card ${msg.formula} = ${msg.total}`);
   check(msg.content === '67' && msg.dashboardTotal === 57, `chat: card total 67, dashboard total kept in flags (${msg.content}, ${msg.dashboardTotal})`);
   check(msg.flavor === 'DiceVision', `chat: roll label as flavor (${msg.flavor})`);
+  check(msg.rollClass === msg.systemClass, `chat: made with the system's roll class (${msg.rollClass}, system ${msg.systemClass})`);
   check(msg.animate === true, `chat: Dice So Nice animates (${msg.animate})`);
   check(msg.icons === 4 && msg.systemIcons === 4, `chat: camera icons in the tooltip (${msg.icons}, system ${msg.systemIcons})`);
 

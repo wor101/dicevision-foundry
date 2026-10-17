@@ -11,8 +11,8 @@ Status: ✅ verified · 🟡 expected to work, not tested · ⚠️ partial · �
 
 | System | Version | Foundry | Status | What to check | Notes |
 |---|---|---|---|---|---|
-| D&D 5e (`dnd5e`) | 6.0.6 | v14 | ✅ | `/roll`, advantage, attack → damage from the item card | Advantage is written `2d20adv`. Verified live and in `scripts-dev/e2e/replace.mjs` |
-| Shadowdark | ? | v14 | ✅ | Sheet attack and check rolls | Tested by hand; fill in the version and which rolls were covered |
+| D&D 5e (`dnd5e`) | 6.0.6 | v14 | ✅ | `/roll`, advantage, attack → damage from the item card | Advantage is written `2d20adv`. Verified live and in `scripts-dev/e2e/replace.mjs`. Chat-mode cards use dnd5e's `BasicRoll` (from v0.3.2; checked in `dsn.mjs`) |
+| Shadowdark | 4.0.6 | v14 | ✅ | Sheet attack and check rolls; Chat-mode cards | Replace mode tested by hand on the Forge (Foundry 14.367, Shadowdark 4.0.6). Chat-mode cards up to v0.3.1 showed only the formula: they were core `Roll` cards, and Shadowdark's styling hid their total. They now use Shadowdark's `RollSD` (checked on a local 4.0.6 world). Camera rolls carry no crit or DC options, so they get no crit or success highlighting |
 | Pathfinder 2e (`pf2e`) | | | 🟡 | Strike, damage, saves, Fortune/Misfortune (2d20kh/kl) | |
 | Savage Worlds (`swade`) | | | 🟡 | Trait roll with Wild Die, aces (exploding) | Explosions add inputs: check the dialog asks for each extra die |
 | Pathfinder 1e (`pf1`) | | | 🟡 | Attack, damage, saves | |
@@ -36,9 +36,11 @@ Status: ✅ verified · 🟡 expected to work, not tested · ⚠️ partial · �
 - **Rolls that don't open the dialog**: a system or setting that evaluates without interactive fulfillment (blind `/roll`, `allowInteractive: false`, quick or automatic rolls) stays digital.
 - **Systems with their own RNG** (not core `Roll`) have nothing to intercept.
 - **Foundry before v12** has no fulfillment API. Only v14 has been tested.
+- **Chat-mode cards** are drawn with the system's roll class (`CONFIG.Dice.rolls[0]`). A class that can't take a bare camera roll (no system options) fails DiceVision's checks and falls back to a core `Roll` card, with a console warning; in a system that styles rolls its own way, that card may look wrong.
 
 ## How to check a system
 
 1. Install it in a local test world (see CLAUDE.md, Local End-to-End Testing) with Replace mode on.
 2. Run the rolls in "What to check" from a character sheet, using real dice or `scripts-dev/fake-dashboard.mjs --dice`.
-3. Record the system and Foundry versions, the status, and anything odd in the table.
+3. Post a Chat-mode roll (dice button) and check the card shows its total and dice. In the console, `game.messages.contents.at(-1).rolls[0].constructor.name` should be the system's roll class (`CONFIG.Dice.rolls[0].name`), with no DiceVision warning.
+4. Record the system and Foundry versions, the status, and anything odd in the table.
