@@ -7,41 +7,47 @@
  * options are saved with the roll, so the mark reaches every client.
  */
 
-import { SUPPORTED_DICE } from "./dice-matching.js";
+import { SUPPORTED_DICE, readDice, isTensFace, isUnitsFace } from "./dice-matching.js";
 
 /**
  * Build an evaluated Roll's data from what the camera read, for Chat mode.
  *
  * One term per die type in the order first read, joined with "+". A d10 "0"
- * counts as 10, as in Replace mode. A percentile tens die (a d10 reading
- * 10..90) pairs with a units d10 (0..9) into a d100. A "00" arrives as 0, the
- * same as a d10 "0", so a 00 + 0 pair can't be recognised here and posts as
- * two d10s of 10 (Replace mode knows when a d100 is wanted and makes it 100).
+ * counts as 10, as in Replace mode. A percentile tens die (a d10 showing
+ * "00" or "10".."90") pairs with a units d10 ("0".."9") into a d100, so
+ * "00" + "0" is 100. A tens die left without a partner: "10" and "00" are
+ * read as a plain d10's 10 (a d10 printed 1-10 shows "10"), others make the
+ * whole roll fall back. A pair the camera can't tell apart from a percentile
+ * roll ("10" + "4" from a 1-10 d10 and a 0-9 d10) posts as a d100; Replace
+ * mode knows what the roll wants.
  *
- * @param {{type: string, value: number}[]} dice
+ * @param {object[]} dice  What the camera read (see readDice)
  * @returns {object|null} Roll data for Roll.fromData, or null when a die
- *   can't be a Foundry die (unknown type, out-of-range value, unpaired tens
- *   die): the caller posts the whole roll as the plain DiceVision card
+ *   can't be a Foundry die (unreadable, unknown type, out-of-range value,
+ *   unpaired tens die): the caller posts the whole roll as the plain
+ *   DiceVision card
  */
 export function buildRollData(dice) {
-  const pool = (dice ?? []).map(d => ({ type: String(d.type).toLowerCase(), value: Number(d.value) }));
-  if (!pool.length) return null;
-
-  const isTens = d => d.type === "d10" && d.value % 10 === 0 && d.value >= 10 && d.value <= 90;
-  const isUnits = d => d.type === "d10" && Number.isInteger(d.value) && d.value >= 0 && d.value <= 9;
+  const pool = readDice(dice);
+  if (!pool.length || pool.some(d => !d.readable)) return null;
 
   /** Each die's faces and value, with its read position (a pair: its first die's) */
   const read = [];
   const add = (faces, value, at) => read.push({ faces, value, at });
 
   // Pair each tens die with a units die first, so a units die isn't used up
-  // as a plain d10
+  // as a plain d10. Tens dice that can also be a plain d10 ("10", "00") pair last.
   const used = new Set();
-  for (const tens of pool.filter(isTens)) {
-    const units = pool.find(d => d !== tens && !used.has(d) && !isTens(d) && isUnits(d));
-    if (!units) return null;
+  const plainToo = d => d.face === "10" || d.face === "00";
+  const tensDice = pool.filter(isTensFace).sort((a, b) => plainToo(a) - plainToo(b));
+  for (const tens of tensDice) {
+    const units = pool.find(d => d !== tens && !used.has(d) && !isTensFace(d) && isUnitsFace(d));
+    if (!units) {
+      if (plainToo(tens)) continue;
+      return null;
+    }
     used.add(tens).add(units);
-    add(100, tens.value + units.value, Math.min(pool.indexOf(tens), pool.indexOf(units)));
+    add(100, tens.value + units.value || 100, Math.min(pool.indexOf(tens), pool.indexOf(units)));
   }
 
   for (const [at, die] of pool.entries()) {

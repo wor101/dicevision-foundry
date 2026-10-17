@@ -1082,7 +1082,8 @@ await test("matchDice: d10 0 counts as 10", () => {
 await test("matchDice: out-of-range and non-integer values are rejected", () => {
   const { values, unused } = filled([die("d20", 25), die("d6", 0), die("d8", 2.5)], ["d20", "d6", "d8"]);
   check(values.every(v => v === undefined), `values ${JSON.stringify(values)}`);
-  check(unused.length === 3 && unused.every(d => d.reason === "out-of-range"), JSON.stringify(unused));
+  const reasons = Object.fromEntries(unused.map(d => [d.type, d.reason]));
+  check(reasons.d20 === "out-of-range" && reasons.d6 === "out-of-range" && reasons.d8 === "unreadable", JSON.stringify(unused));
 });
 
 await test("matchDice: percentile pairs fill d100", () => {
@@ -1917,7 +1918,7 @@ await test("dropCarriedOver: a full re-roll that repeats a value still counts", 
 
 await test("dropCarriedOver: the attack's d20 in view during damage is carried, not unused", () => {
   const { dice, carried } = dropCarriedOver([die("d20", 15), die("d8", 4)], [die("d20", 15)], ["d8"]);
-  check(JSON.stringify(dice) === '[{"type":"d8","value":4}]' && carried[0]?.type === "d20", JSON.stringify({ dice, carried }));
+  check(dice.length === 1 && dice[0].type === "d8" && dice[0].value === 4 && carried[0]?.type === "d20", JSON.stringify({ dice, carried }));
 });
 
 await test("dropCarriedOver: d100 needs two d10s; only the surplus is dropped", () => {
@@ -2346,6 +2347,139 @@ await interceptTest("camera fills are counted on their dice term; digital fills 
   await flush();
   const marks = ["t0", "t1", "t2"].map(id => app.fulfillable.get(id).term.options?.dicevision?.physical ?? 0);
   check(JSON.stringify(marks) === "[0,1,0]", `physical per term ${JSON.stringify(marks)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Face strings and unreadable dice (dice-vision PR #420)
+// ---------------------------------------------------------------------------
+
+const { readDice, faceNumber } = await import("../scripts/dice-matching.js");
+const { describeUnused } = await import("../scripts/roll-intercept.js");
+
+/** A die as the server sends it: {type, value, face, readable} */
+const vtt = (type, face, readable = true) => {
+  const n = faceNumber(face);
+  return { type, value: readable && n !== null ? n : -1, face, readable };
+};
+const rollOfFaces = (...dice) => ({ ...ROLL, data: { dice, total: 0, roll_id: "rf" } });
+
+await test("faceNumber and readDice read every server shape", () => {
+  check(faceNumber("00") === 0 && faceNumber("pip_4") === 4 && faceNumber("-1") === -1, "numbers");
+  check(faceNumber("skull") === null && faceNumber("pip_x") === null && faceNumber("") === null, "symbols");
+  const [tens, pip, old, unread, symbol, flagged] = readDice([
+    { type: "D10", value: 0, face: "00", readable: true },
+    { type: "d6", value: "pip_4" },
+    { type: "d20", value: 15 },
+    { type: "d8", value: -1, face: "-1", readable: false },
+    { type: "d12", value: "unknown" },
+    { type: "d6", value: 3, face: "3", readable: false }
+  ]);
+  check(JSON.stringify(tens) === '{"type":"d10","value":0,"face":"00","readable":true}', `tens ${JSON.stringify(tens)}`);
+  check(pip.value === 4 && pip.face === "pip_4" && pip.readable, `pip ${JSON.stringify(pip)}`);
+  check(old.value === 15 && old.face === "15" && old.readable, `old server ${JSON.stringify(old)}`);
+  check(!unread.readable && unread.value === -1, `unreadable ${JSON.stringify(unread)}`);
+  check(!symbol.readable && symbol.value === -1, `unknown symbol ${JSON.stringify(symbol)}`);
+  check(!flagged.readable, "readable: false wins over a number");
+  check(readDice(undefined).length === 0, "no dice");
+});
+
+await test("matchDice: faces tell 00 from 0", () => {
+  check(filled([vtt("d10", "00"), vtt("d10", "0")], ["d100"]).values[0] === 100, "00 + 0 = 100");
+  check(filled([vtt("d10", "0"), vtt("d10", "00")], ["d100"]).values[0] === 100, "order-independent");
+  check(filled([vtt("d10", "00"), vtt("d10", "7")], ["d100"]).values[0] === 7, "00 + 7 = 7");
+  check(filled([vtt("d10", "0"), vtt("d10", "30")], ["d100"]).values[0] === 30, "30 + 0 = 30");
+  check(filled([vtt("d10", "10")], ["d10"]).values[0] === 10, "a d10 printed 1-10 fills a d10 with its 10");
+});
+
+await test("matchDice: an unreadable die fills nothing and is reported", () => {
+  const { values, unused } = filled([vtt("d20", "-1", false), vtt("d6", "pip_5")], ["d20", "d6"]);
+  check(values[0] === undefined && values[1] === 5, `values ${JSON.stringify(values)}`);
+  check(unused.length === 1 && unused[0].type === "d20" && unused[0].reason === "unreadable", JSON.stringify(unused));
+});
+
+await test("dropCarriedOver: an unreadable die is never carried over", () => {
+  const prev = [vtt("d20", "-1", false)];
+  const { dice, carried } = dropCarriedOver([vtt("d20", "-1", false), vtt("d8", "3")], prev, ["d8"]);
+  check(carried.length === 0 && dice.length === 2, JSON.stringify({ dice, carried }));
+  const faces = dropCarriedOver([vtt("d10", "00"), vtt("d10", "0")], [vtt("d10", "0")], ["d10"]);
+  check(faces.carried.length === 1 && faces.carried[0].face === "0", `matched by face ${JSON.stringify(faces)}`);
+});
+
+await test("describeUnused: names faces as printed, unreadable dice by type", () => {
+  const text = describeUnused([
+    { ...vtt("d10", "00"), reason: "not-needed" },
+    { ...vtt("d20", "-1", false), reason: "unreadable" }
+  ]);
+  check(text.includes('"d10 (00)"') && /CouldntRead \{"dice":"d20"\}/.test(text), text);
+});
+
+await test("buildRollData: faces make 00 + 0 a d100 of 100, and a lone 10 a d10", () => {
+  let data = buildRollData([vtt("d10", "00"), vtt("d10", "0")]);
+  check(data.formula === "1d100" && data.total === 100, `00 + 0: ${data.formula} = ${data.total}`);
+  data = buildRollData([vtt("d10", "10")]);
+  check(data?.formula === "1d10" && data.total === 10, `lone 10: ${data?.formula} = ${data?.total}`);
+  data = buildRollData([vtt("d10", "00")]);
+  check(data?.formula === "1d10" && data.total === 10, `lone 00: ${data?.formula} = ${data?.total}`);
+  data = buildRollData([vtt("d10", "10"), vtt("d10", "00")]);
+  check(data?.formula === "2d10" && data.total === 20, `10 + 00: ${data?.formula} = ${data?.total}`);
+  data = buildRollData([vtt("d10", "10"), vtt("d10", "30"), vtt("d10", "5")]);
+  check(data?.formula === "1d10 + 1d100" && data.total === 45, `30 takes the units die: ${data?.formula} = ${data?.total}`);
+  data = buildRollData([vtt("d10", "10"), vtt("d10", "4")]);
+  check(data?.formula === "1d100" && data.total === 14, `10 + 4 can't be told from a percentile roll: ${data?.formula}`);
+  data = buildRollData([vtt("d6", "pip_3"), vtt("d6", "pip_6")]);
+  check(data?.formula === "2d6" && data.total === 9, `pips ${data?.formula} = ${data?.total}`);
+  check(buildRollData([vtt("d20", "12"), vtt("d6", "-1", false)]) === null, "an unreadable die: no roll card");
+  check(buildRollData([vtt("d10", "40")]) === null, "a lone 40 still can't be a d10");
+});
+
+await test("chat request: an unreadable die isn't posted, warns, and keeps waiting", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  ws.sent = [];
+  ws.recv(rollOfFaces(vtt("d20", "17"), vtt("d8", "-1", false)));
+  await flush();
+  check(chat.length === 0, "not posted");
+  check(toasts.at(-1)?.[0] === "warn" && toasts.at(-1)[1] === 'DICEVISION.Notifications.CouldntRead {"dice":"d8"}', `toasts ${JSON.stringify(toasts)}`);
+  check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
+  check(c.getState().waiting, "still waiting");
+  ws.recv(rollOfFaces(vtt("d20", "17"), vtt("d8", "6")));
+  await flush();
+  check(chat.length === 1 && chat[0].rolls?.[0]?.total === 23, `reroll posted ${JSON.stringify(chat[0]?.rolls?.[0]?.total)}`);
+  check(!c.getState().waiting, "done waiting");
+});
+
+await test("chat: the stored dice carry face and readable", async (c) => {
+  const ws = connectOneShot(c);
+  c.requestRoll();
+  ws.recv(rollOfFaces(vtt("d10", "00"), vtt("d10", "0")));
+  await flush();
+  check(chat[0]?.flags.dicevision.dice[0]?.face === "00" && chat[0].rolls?.[0]?.total === 100, JSON.stringify(chat[0]?.flags));
+});
+
+await interceptTest("replace: an unreadable die is reported in the dialog and its slot keeps waiting", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d20", "d6"]);
+  open(app);
+  ws.sent = [];
+  ws.recv(rollOfFaces(vtt("d20", "-1", false), vtt("d6", "pip_2")));
+  await flush();
+  check(JSON.stringify(app.values()) === '["","2"]', `values ${JSON.stringify(app.values())}`);
+  check(/CouldntRead \{"dice":"d20"\}/.test(app.notice() ?? ""), `notice ${app.notice()}`);
+  check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
+  ws.recv(rollOfFaces(vtt("d20", "19"), vtt("d6", "pip_2")));
+  await flush();
+  check(JSON.stringify(app.values()) === '["19","2"]', `reroll fills the d20 ${JSON.stringify(app.values())}`);
+});
+
+await interceptTest("replace: 00 + 0 fills a d100 with 100", async (c) => {
+  settings.mode = "replace";
+  const ws = connectOneShot(c);
+  const app = fakeResolver(["d100"]);
+  open(app);
+  ws.recv(rollOfFaces(vtt("d10", "0"), vtt("d10", "00")));
+  await flush();
+  check(JSON.stringify(app.values()) === '["100"]', `values ${JSON.stringify(app.values())}`);
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);

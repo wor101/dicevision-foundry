@@ -327,8 +327,11 @@ export function summarize(denominations) {
 
 /** A warning naming dice the roll couldn't use. */
 export function describeUnused(unused) {
-  const describe = reason => unused.filter(d => d.reason === reason).map(d => `${d.type} (${d.value})`).join(", ");
+  // The face as printed ("00", not 0); an unreadable die has none worth showing
+  const name = d => (d.reason === "unreadable" ? d.type : `${d.type} (${d.face ?? d.value})`);
+  const describe = reason => unused.filter(d => d.reason === reason).map(name).join(", ");
   const messages = {
+    unreadable: "DICEVISION.Fulfillment.CouldntRead",
     "not-needed": "DICEVISION.Fulfillment.NotNeeded",
     "out-of-range": "DICEVISION.Fulfillment.OutOfRange",
     "missing-pair": "DICEVISION.Fulfillment.MissingPair",

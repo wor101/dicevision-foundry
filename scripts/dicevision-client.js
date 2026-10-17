@@ -8,6 +8,7 @@
  */
 
 import { displayRollInChat } from "./dice-bridge.js";
+import { readDice } from "./dice-matching.js";
 
 const MODULE_ID = "dicevision";
 const APP_ID = "foundry";
@@ -394,13 +395,21 @@ export class DiceVisionClient {
     if (!rollData) return;
 
     console.log("[DiceVision] Roll received:", rollData);
+    if (!Array.isArray(rollData.dice)) {
+      console.warn("[DiceVision] Ignoring a roll with no dice list:", rollData);
+      return;
+    }
+    rollData = { ...rollData, dice: readDice(rollData.dice) };
 
     const wasRegistered = this.registered;
     // A roll dialog waiting for dice takes the roll; otherwise it goes to
     // chat if one was requested (Chat or Replace mode)
     const consumer = [...this.rollConsumers].find(c => c.wantsRoll());
     const postToChat = !consumer && this._wantsChatRoll();
-    if (postToChat) this.pendingChatRoll = false;
+    // A die the camera couldn't read would post a wrong roll: keep waiting
+    // for the reroll instead (a roll dialog reports it in the dialog)
+    const unreadable = postToChat ? rollData.dice.filter(d => !d.readable) : [];
+    if (postToChat && !unreadable.length) this.pendingChatRoll = false;
 
     if (consumer) {
       try {
@@ -432,6 +441,13 @@ export class DiceVisionClient {
           ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.RollIgnored"));
         }
       }
+      return;
+    }
+
+    if (unreadable.length) {
+      ui.notifications.warn(game.i18n.format("DICEVISION.Notifications.CouldntRead", {
+        dice: unreadable.map(d => d.type).join(", ")
+      }));
       return;
     }
 
