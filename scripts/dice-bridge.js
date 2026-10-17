@@ -2,10 +2,11 @@
  * Dice Bridge — Roll Conversion and Chat Display
  *
  * Posts DiceVision rolls to Foundry's chat as standard roll cards: a real
- * Foundry roll, so the card gets Foundry's tooltip and Dice So Nice! can
- * animate it. If any die can't be part of a Foundry roll (see buildRollData),
- * the whole roll falls back to the plain DiceVision card. Handles chat visibility (whisper targets)
- * based on module settings.
+ * Foundry roll, made with the game system's roll class, so the card gets the
+ * system's roll layout and tooltip and Dice So Nice! can animate it. If any
+ * die can't be part of a Foundry roll (see buildRollData), the whole roll
+ * falls back to the plain DiceVision card. Handles chat visibility (whisper
+ * targets) based on module settings.
  */
 
 import { buildRollData } from "./roll-data.js";
@@ -36,7 +37,7 @@ export async function displayRollInChat(rollData) {
     }
   };
 
-  const roll = buildRoll(rollData.dice);
+  const roll = await buildRoll(rollData.dice);
   if (roll) {
     Object.assign(messageData, {
       flavor: label,
@@ -63,11 +64,12 @@ export async function displayRollInChat(rollData) {
  *
  * The roll is made with the game system's own roll class
  * (CONFIG.Dice.rolls[0]), so the card is drawn the way the system draws its
- * rolls. Shadowdark's RollSD has its own card template; a core Roll card there
- * gets Shadowdark's styling with core's layout, which pushes the total out of
- * view. If the system's class rejects the data, core's Roll is tried next.
+ * rolls (dnd5e: BasicRoll, Shadowdark: RollSD). Shadowdark's RollSD has its
+ * own card template; a core Roll card there gets Shadowdark's styling with
+ * core's layout, which pushes the total out of view. The system's roll is
+ * checked first (see trySystemRoll); if it fails, core's Roll is used.
  */
-function buildRoll(dice) {
+async function buildRoll(dice) {
   const data = buildRollData(dice);
   if (!data) {
     console.info("[DiceVision] Posting the plain card: these dice can't be a Foundry roll (no 3D dice):", dice);
@@ -77,10 +79,10 @@ function buildRoll(dice) {
   const SystemRoll = CONFIG.Dice?.rolls?.[0];
   if (SystemRoll && SystemRoll !== CoreRoll) {
     try {
-      // fromData picks the class by name from CONFIG.Dice.rolls
-      return SystemRoll.fromData({ ...data, class: SystemRoll.name });
+      return await trySystemRoll(SystemRoll, data);
     } catch (err) {
-      console.warn(`[DiceVision] The system's roll class (${SystemRoll.name}) rejected the roll data; trying core Roll:`, err, data);
+      console.warn(`[DiceVision] The system's roll class (${SystemRoll.name}) can't take these dice; `
+        + "using core Roll, whose card may not display correctly in this system:", err, data);
     }
   }
   try {
@@ -89,6 +91,30 @@ function buildRoll(dice) {
     console.warn("[DiceVision] Foundry rejected the roll data; posting the plain card (no 3D dice):", err, data);
     return null;
   }
+}
+
+/**
+ * The roll made with the system's roll class, once it has shown it works:
+ * failures past this point (drawing the card, every client reloading the
+ * roll) happen after the message is saved, where nothing can fall back, and
+ * leave a card that never appears.
+ * - fromData redirects to the CONFIG.Dice.rolls class named by data.class
+ *   (and throws if there's none), so the data is given this class's name.
+ * - The total must be the camera's (a class may compute its own).
+ * - Every client rebuilds the roll from its saved data, finding the class by
+ *   name, so that must give this class back.
+ * - It must draw, as the roller sees it and as others see a private roll.
+ * @throws when any of these fails
+ */
+async function trySystemRoll(SystemRoll, data) {
+  const roll = SystemRoll.fromData({ ...data, class: SystemRoll.name });
+  if (!roll._evaluated) throw new Error("the roll isn't evaluated");
+  if (roll.total !== data.total) throw new Error(`its total is ${roll.total}, not ${data.total}`);
+  const reloaded = foundry.dice.Roll.fromData(JSON.parse(JSON.stringify(roll)));
+  if (reloaded?.constructor !== SystemRoll) throw new Error(`it reloads as ${reloaded?.constructor?.name}`);
+  await roll.render();
+  await roll.render({ isPrivate: true });
+  return roll;
 }
 
 /**
