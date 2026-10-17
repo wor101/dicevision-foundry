@@ -26,8 +26,6 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    # Actions updates only accept default-days (no semver-* keys)
     cooldown:
       default-days: 7
-      semver-major-days: 14
-      semver-minor-days: 7
-      semver-patch-days: 7
