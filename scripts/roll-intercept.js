@@ -15,7 +15,7 @@
  * has its own arrow button that rolls it digitally.
  */
 
-import { matchDice, dropCarriedOver, SUPPORTED_DICE } from "./dice-matching.js";
+import { matchDice, dropCarriedOver, summarize, SUPPORTED_DICE } from "./dice-matching.js";
 
 export const METHOD_ID = "dicevision";
 const STATUS_CLASS = "dicevision-status";
@@ -91,7 +91,8 @@ export function registerRollIntercept(client) {
         if (carried.length) console.log("[DiceVision] Still on the table from the last roll, not used:", carried);
         lastRoll = { dice: rollData.dice ?? [], at: Date.now() };
 
-        const { fills, unused } = matchDice(dice, needs);
+        const { fills, unused, ignored } = matchDice(dice, needs);
+        if (ignored.length) console.log("[DiceVision] Unreadable dice this roll doesn't need, not reported:", ignored);
         const rejected = [];
         for (const { index, value } of fills) {
           const { app, denomination } = slots[index];
@@ -115,7 +116,7 @@ export function registerRollIntercept(client) {
           }
         }
 
-        const nothing = !fills.length && !unused.length && !carried.length;
+        const nothing = !fills.length && !unused.length && !carried.length && !ignored.length;
         const notice = nothing ? game.i18n.localize("DICEVISION.Fulfillment.EmptyRoll")
           : unused.length || rejected.length ? describeUnused([...unused, ...rejected]) : null;
         // Rejected dice already got Foundry's own toast
@@ -237,7 +238,7 @@ function markPhysical(app, input) {
   term.options.dicevision.physical++;
 }
 
-/** Empty, enabled DiceVision inputs for dice the camera can't read. */
+/** Empty, enabled DiceVision inputs for die types DiceVision doesn't support. */
 function unreadableInputs(app) {
   if (!app.rendered || !app.element) return [];
   return [...app.element.querySelectorAll(DICEVISION_INPUTS)]
@@ -245,7 +246,7 @@ function unreadableInputs(app) {
 }
 
 /**
- * The camera can't read dice like d3, d2 or coins: roll those digitally
+ * DiceVision doesn't support dice like d3, d2 or coins: roll those digitally
  * instead of leaving the dialog waiting for them.
  * @returns {string[]} Denominations rolled digitally
  */
@@ -295,7 +296,7 @@ function renderStatus(app, client, notice) {
   const connected = client.isConnected();
   const text = !connected ? game.i18n.localize(`DICEVISION.Fulfillment.NotConnected${fallback}`)
     : waiting.length ? game.i18n.format(`DICEVISION.Fulfillment.Waiting${fallback}`, { dice: summarize(waiting) })
-    : stuck.length ? game.i18n.format(`DICEVISION.Fulfillment.Unreadable${fallback}`, { dice: summarize(stuck) })
+    : stuck.length ? game.i18n.format(`DICEVISION.Fulfillment.Unsupported${fallback}`, { dice: summarize(stuck) })
     : game.i18n.localize("DICEVISION.Fulfillment.Done");
   if (status.textContent !== text) status.textContent = text;
   status.classList.toggle("dicevision-waiting", connected && waiting.length > 0);
@@ -318,17 +319,21 @@ function addsInput(node) {
   return node.nodeName === "INPUT" || !!node.querySelector?.("input");
 }
 
-/** ["d20", "d20", "d6"] → "2d20, 1d6" */
-export function summarize(denominations) {
-  const counts = new Map();
-  for (const d of denominations) counts.set(d, (counts.get(d) ?? 0) + 1);
-  return [...counts].map(([d, n]) => `${n}${d}`).join(", ");
-}
+export { summarize };
 
 /** A warning naming dice the roll couldn't use. */
 export function describeUnused(unused) {
-  const describe = reason => unused.filter(d => d.reason === reason).map(d => `${d.type} (${d.value})`).join(", ");
+  // The face as printed ("00", not 0). An unreadable die has no face worth
+  // showing, so those are counted by type ("2d8")
+  const describe = (reason) => {
+    const dice = unused.filter(d => d.reason === reason);
+    if (reason === "unreadable") return summarize(dice.map(d => d.type));
+    return dice.map(d => `${d.type} (${d.face ?? d.value})`).join(", ");
+  };
+  // "unreadable" is one die the camera failed to read (roll it again), not
+  // Fulfillment.Unsupported (a die type DiceVision doesn't support)
   const messages = {
+    unreadable: "DICEVISION.Fulfillment.CouldntRead",
     "not-needed": "DICEVISION.Fulfillment.NotNeeded",
     "out-of-range": "DICEVISION.Fulfillment.OutOfRange",
     "missing-pair": "DICEVISION.Fulfillment.MissingPair",

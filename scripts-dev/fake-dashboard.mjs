@@ -10,6 +10,9 @@
 //                 Fix a value with =: d20=17 or 2d6=3. Separate rolls with ;
 //                 to send different dice each time (the last spec repeats):
 //                 "d20=12;d6=2" sends a d20 of 12, then a d6 of 2.
+//                 A fixed value is the face as printed: d10=00, d6=pip_4,
+//                 or d8=-1 for a die the camera couldn't read (any other
+//                 symbol, e.g. d8=skull, is also sent as unreadable).
 //   --max N       Stop after sending N rolls (default 1; 0 = unlimited)
 //   --delay MS    Wait before answering a request (default 500)
 //   --no-dice N   First answer N times with "no_dice" (recognition found
@@ -65,13 +68,16 @@ const rollSpecs = diceSpec.split(';');
 function rollDice(spec) {
   const dice = [];
   for (const part of spec.split(',')) {
-    const m = /^(\d*)d(\d+|%)(?:=(\d+))?$/i.exec(part.trim());
+    const m = /^(\d*)d(\d+|%)(?:=(-?\w+))?$/i.exec(part.trim());
     if (!m) throw new Error(`bad dice spec: ${part}`);
     const count = Number(m[1] || 1);
     const sides = m[2] === '%' ? 100 : Number(m[2]);
     for (let i = 0; i < count; i++) {
-      const value = m[3] !== undefined ? Number(m[3]) : 1 + Math.floor(Math.random() * sides);
-      dice.push({ type: sides === 100 ? 'd100' : `d${sides}`, value });
+      // The face as the dashboard sends it ("00", "pip_4", "-1" when unread);
+      // the bridge rebuilds value and readable from it
+      const face = m[3] ?? String(1 + Math.floor(Math.random() * sides));
+      const number = /^pip_\d+$/.test(face) ? Number(face.slice(4)) : /^-?\d+$/.test(face) ? Number(face) : -1;
+      dice.push({ type: sides === 100 ? 'd100' : `d${sides}`, value: number, face });
     }
   }
   return dice;
@@ -111,7 +117,7 @@ function maybeRoll(reason) {
       return;
     }
     const dice = rollDice(rollSpecs[Math.min(sent, rollSpecs.length - 1)]);
-    const total = dice.reduce((s, d) => s + d.value, 0);
+    const total = dice.reduce((s, d) => s + Math.max(d.value, 0), 0);
     const roll_id = crypto.randomUUID();
     ws.send(JSON.stringify({ type: 'roll', data: { dice, total, roll_id } }));
     sent++;

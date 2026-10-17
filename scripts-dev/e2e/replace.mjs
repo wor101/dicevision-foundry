@@ -132,6 +132,29 @@ try {
   await dash.exited();
   check(roll.total === 37, `d10 30 + d10 7 fills a d100 with 37 (${roll.total})`);
 
+  // Face strings: "00" + "0" is 100 (the bridge used to send both as 0)
+  dash = dashboard(['--max', '1', '--dice', 'd10=0,d10=00', '--watch', '2']);
+  await dash.until('connected');
+  await chatCommand('/roll 1d100');
+  roll = await nextRoll();
+  await dash.exited();
+  check(roll.total === 100, `d10 00 + d10 0 fills a d100 with 100 (${roll.total})`);
+
+  // A die the camera couldn't read fills nothing: the dialog says so and
+  // waits for the reroll
+  dash = dashboard(['--max', '2', '--dice', 'd20=-1;d20=16', '--delay', '1500', '--watch', '3']);
+  await dash.until('connected');
+  await chatCommand('/roll 1d20');
+  await resolverOpen();
+  const unread = await page.waitForFunction(() => {
+    const text = document.querySelector('.dicevision-status-notice')?.textContent ?? '';
+    return /couldn't read/i.test(text) ? text : null;
+  }, null, { timeout: 10000 }).then(h => h.jsonValue()).catch(() => null);
+  check(/d20/.test(unread ?? ''), `unreadable: notice names the die ("${unread}")`);
+  roll = await nextRoll();
+  await dash.exited();
+  check(roll.total === 16, `unreadable: the reroll fills it (${roll.total})`);
+
   // dnd5e advantage roll through the system's own roll class
   const hasD20Roll = await page.evaluate(() => !!CONFIG.Dice.D20Roll);
   if (hasD20Roll) {

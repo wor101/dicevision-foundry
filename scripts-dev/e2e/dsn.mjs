@@ -174,6 +174,32 @@ try {
   check(msg.animate === true, `chat: Dice So Nice animates (${msg.animate})`);
   check(msg.icons === 4 && msg.systemIcons === 4, `chat: camera icons in the tooltip (${msg.icons}, system ${msg.systemIcons})`);
 
+  // Chat mode, face strings: "00" + "0" is a d100 of 100; a lone d10 "10"
+  // (a d10 printed 1-10) is a d10, not an unpaired percentile die
+  dash = dashboard(['--max', '1', '--dice', 'd10=00,d10=0', '--watch', '2']);
+  await dash.until('connected');
+  await mark();
+  await page.evaluate(() => game.modules.get('dicevision').api.requestRoll());
+  msg = await nextRollMessage();
+  await dash.exited();
+  check(msg.formula === '1d100' && msg.total === 100, `chat: 00 + 0 is a d100 of 100 (${msg.formula} = ${msg.total})`);
+  dash = dashboard(['--max', '1', '--dice', 'd10=10', '--watch', '2']);
+  await dash.until('connected');
+  await mark();
+  await page.evaluate(() => game.modules.get('dicevision').api.requestRoll());
+  msg = await nextRollMessage();
+  await dash.exited();
+  check(msg.formula === '1d10' && msg.total === 10, `chat: a lone d10 10 is a roll card of 1d10 (${msg.formula} = ${msg.total})`);
+
+  // Chat mode, unreadable die: nothing posted until the reroll
+  dash = dashboard(['--max', '2', '--dice', 'd8=-1;d8=6', '--delay', '1500', '--watch', '3']);
+  await dash.until('connected');
+  await mark();
+  await page.evaluate(() => game.modules.get('dicevision').api.requestRoll());
+  msg = await nextRollMessage();
+  await dash.exited();
+  check(msg.formula === '1d8' && msg.total === 6, `chat: an unreadable d8 isn't posted, its reroll is (${msg.formula} = ${msg.total})`);
+
   // Chat mode, GM Only: a private roll
   await page.evaluate(() => game.settings.set('dicevision', 'chatVisibility', 'gm'));
   dash = dashboard(['--max', '1', '--dice', 'd8=6', '--watch', '2']);
