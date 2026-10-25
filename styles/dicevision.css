@@ -110,3 +110,78 @@
   font-size: var(--font-size-13, 13px);
   color: var(--color-level-warning, #ee9b3a);
 }
+
+/* Sidebar tab (v13+) */
+
+#sidebar-tabs [data-tab="dicevision"].dicevision-connected {
+  color: var(--color-level-success, #4caf50);
+}
+
+#sidebar-tabs [data-tab="dicevision"].dicevision-reconnecting {
+  color: var(--color-level-warning, #ee9b3a);
+}
+
+.dicevision-panel {
+  gap: 8px;
+  padding: 8px;
+}
+
+.dicevision-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-cool-4, #3d3d44);
+  border-radius: 4px;
+  font-size: var(--font-size-13, 13px);
+}
+
+.dicevision-panel-status.connected { color: var(--color-level-success, #4caf50); }
+.dicevision-panel-status.connecting,
+.dicevision-panel-status.reconnecting { color: var(--color-level-warning, #ee9b3a); }
+.dicevision-panel-status.connecting i,
+.dicevision-panel-status.reconnecting i { animation: dicevision-spin 1.5s linear infinite; }
+
+@keyframes dicevision-spin {
+  to { transform: rotate(360deg); }
+}
+
+.dicevision-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dicevision-panel-actions [data-dv="request"].dicevision-waiting {
+  color: #ffb84d;
+  animation: dicevision-pulse 1.2s ease-in-out infinite;
+}
+
+.dicevision-panel-actions [data-dv="continuous"][aria-pressed="true"] {
+  color: var(--color-text-emphatic, #fff);
+  background: var(--color-warm-2, #c9593f);
+}
+
+/* Labels above fields (core's .stacked); core's label line-height is the input height */
+.dicevision-panel .form-group.stacked {
+  gap: 2px;
+}
+
+.dicevision-panel .form-group.stacked > label {
+  line-height: normal;
+  font-size: var(--font-size-12, 12px);
+}
+
+.dicevision-panel .form-group .hint {
+  margin: 0;
+}
+
+.dicevision-panel input.dicevision-invalid {
+  border-color: var(--color-level-error, #ce0707);
+}
+
+.dicevision-panel-connect input[name="sessionCode"] {
+  font-family: var(--font-monospace, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

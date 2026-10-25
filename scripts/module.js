@@ -8,6 +8,7 @@
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
+import { registerSidebarTab } from "./sidebar-tab.js";
 import { registerRollIntercept, diceConfigUsesDiceVision } from "./roll-intercept.js";
 import { registerDiceSoNice } from "./dice-so-nice.js";
 
@@ -22,6 +23,7 @@ Hooks.once("init", () => {
 
   registerSettings();
   registerChatControls(diceVisionClient);
+  registerSidebarTab(diceVisionClient);
   registerRollIntercept(diceVisionClient);
   registerDiceSoNice();
 

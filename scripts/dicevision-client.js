@@ -294,8 +294,10 @@ export class DiceVisionClient {
 
   /**
    * @returns {{connected: boolean, sessionActive: boolean, sessionCode: string|null,
+   *   reconnectAttempt: number, reconnectMax: number,
    *   mode: string, continuous: boolean, waiting: boolean, dialogWaiting: boolean}}
    *   sessionActive: connected, connecting, or waiting to reconnect
+   *   reconnectAttempt: the current retry (1-based) while reconnecting, else 0
    *   waiting: a chat roll is wanted (dice button, /dv roll, continuous)
    *   dialogWaiting: a Foundry roll dialog is waiting for physical dice
    */
@@ -304,6 +306,8 @@ export class DiceVisionClient {
       connected: this.isConnected(),
       sessionActive: !!this.ws || !!this.reconnectTimeout,
       sessionCode: this.sessionCode,
+      reconnectAttempt: this.reconnectAttempts,
+      reconnectMax: MAX_RECONNECT_ATTEMPTS,
       mode: game.settings.get(MODULE_ID, "mode"),
       continuous: game.settings.get(MODULE_ID, "continuous"),
       waiting: this.isConnected() && this._wantsChatRoll(),

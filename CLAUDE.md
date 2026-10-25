@@ -47,6 +47,15 @@ Built on Foundry's dice fulfillment API (v12+), not a `/roll` patch, so it cover
   - Closing the dialog with X while such a die is pending leaves the roll unresolved. That's core behaviour.
 - No dialog when core skips interactive fulfillment: blind `/roll`s, `Roll#toMessage` in blind mode, `allowInteractive: false`, minimize/maximize. Systems that evaluate first still open it for blind rolls; dnd5e's sheet rolls call `roll.evaluate()` without `allowInteractive`.
 
+### Sidebar panel (`sidebar-tab.js`, `templates/sidebar-tab.hbs`)
+
+A camera tab in the sidebar's tab bar, registered the way Dice So Nice registers its d20 tab (Foundry v13+ API; on v12 `registerSidebarTab` logs and returns false, leaving Game Settings and `/dv connect`):
+- `CONFIG.ui.dicevision` is a `HandlebarsApplicationMixin(AbstractSidebarTab)` subclass, and `CONFIG.ui.sidebar.TABS.dicevision = { icon, tooltip }` is inserted just before `settings` (delete and re-add `settings` to keep the order). Both in `init`; Foundry instantiates `ui.dicevision` itself. Right-click pops the tab out (core behaviour; the popout is a second instance, so element ids use `this.id`).
+- The `icon` is a CSS class string: any Font Awesome 6 Free class Foundry bundles, or a module-defined class that draws its own SVG (e.g. `mask-image`).
+- Not connected: session code field + Connect, through `connectWithCode()` (shared with `/dv connect`; a bad code marks the field and toasts `Commands.InvalidCode`). With a session active (`sessionActive`): status line (`panelStatus()`, pure), Roll / Continuous / Disconnect buttons (same client calls as the chat buttons), and the settings as a form that saves each `change` through `game.settings.set`, so the settings' `onChange` hooks still drive the client. `diceSoNice` is world-scoped, GM only.
+- `dicevision.stateChanged` re-renders the panel (if rendered) and tints the tab button (`dicevision-connected` / `dicevision-reconnecting`) and lights its `.notification-pip` while waiting for dice. A half-typed session code survives the re-render: `_prepareContext` reads the current input, `_preRender` notes focus. `closeSettingsConfig` re-renders too, in case Game Settings changed a value.
+- `getState()` has `reconnectAttempt` and `reconnectMax` for the "Reconnecting (n/5)" status.
+
 ### Dice So Nice! (`dice-so-nice.js`, `roll-data.js`)
 
 Dice So Nice animates from the results saved in the chat message, so 3D dice land on the physical values with no forcing (unlike Codex's forcedDice). Two things would stop it, and interactive throws would ask for physical dice again; all handled while the **`diceSoNice`** world setting is on (default) and Dice So Nice is active:
@@ -95,10 +104,12 @@ dicevision-foundry/
 │   ├── roll-data.js          # Pure: Chat-mode Roll data, strip the dicevision method
 │   ├── dice-so-nice.js       # Dice So Nice: preCreateChatMessage strip, tooltip camera icon
 │   ├── chat-controls.js      # Chat sidebar buttons + /dv commands (v14 passes the hook HTML: plainText())
+│   ├── sidebar-tab.js        # Sidebar camera tab (v13+): connect form, status, roll buttons, settings
 │   └── settings.js           # game.settings registration (client-scoped, except world-scoped diceSoNice)
 ├── templates/
-│   └── chat-message.hbs      # Fallback chat card (dice Foundry can't roll)
-├── styles/dicevision.css     # Fallback chat card, chat buttons, roll-dialog status
+│   ├── chat-message.hbs      # Fallback chat card (dice Foundry can't roll)
+│   └── sidebar-tab.hbs       # Sidebar panel
+├── styles/dicevision.css     # Fallback chat card, chat buttons, roll-dialog status, sidebar panel
 ├── lang/en.json              # Localization strings (DICEVISION.*)
 ├── tests/client.test.mjs     # Client tests: node tests/client.test.mjs
 ├── scripts-dev/              # Release helpers, fake-dashboard.mjs, e2e/ (Playwright)
@@ -210,10 +221,11 @@ game.modules.get("dicevision").api.connect("XKRM4N7B");
 
 A local Foundry server plus a fake dashboard lets you test against the live bridge without a camera:
 
-- **Foundry** (Node.js build, licensed): v14 needs Node 24. Start it with `--noupnp`, since UPnP is on by default and asks the router to expose the port. Symlink this repo to `<dataPath>/Data/modules/dicevision`, so edits apply on a page reload. A world can be created with `POST /create {action: "createWorld", id, title, system}` (admin session), then launched with `POST /setup {action: "launchWorld", world}`.
+- **Foundry** (Node.js build, licensed): v14 needs Node 24. Start it with `--noupnp`, since UPnP is on by default and asks the router to expose the port. `--world=dicevision-test` launches the world at startup, so the e2e scripts need no admin password. Symlink this repo to `<dataPath>/Data/modules/dicevision`, so edits apply on a page reload. A world can be created with `POST /create {action: "createWorld", id, title, system}` (admin session), then launched with `POST /setup {action: "launchWorld", world}`.
 - **`scripts-dev/fake-dashboard.mjs CODE`**: joins a bridge session as the dashboard. It answers `waiting` with scripted dice (`--dice 1d20,2d6`; fixed faces `d20=17`, `d10=00`, `d6=pip_4`, or `d8=-1` for an unreadable die; a different roll each time `"d20=12;d6=2"`) and stops after `--max N` rolls. `--no-dice N` answers the first N requests with `no_dice`. It also reports `requests_after_last_roll`, the number of extra requests that would keep the real dashboard in continuous capture. The session code must exist, because the bridge validates it. Keep the real dashboard closed on that code.
 - **`scripts-dev/e2e/continuous.mjs CODE`**: Playwright run against the local world as `Gamemaster` (the world also has a `Player` user for manual two-user tests; neither has a password). It checks the dice button, continuous mode and `/dv` commands.
 - **`scripts-dev/e2e/replace.mjs CODE`**: Replace mode end to end: mixed dice in one roll, partial rolls, wrong dice, the `no_dice` notice (needs a bridge with dice-vision#415), exploding dice, percentile (including 00 + 0), an unreadable die and its reroll, a dnd5e advantage `D20Roll`, Mode Off with per-die Dice Configuration, Submit as digital fallback, and digital rolls while disconnected. Set `FOUNDRY_USER=Player` if someone is logged in as the GM (Foundry allows one session per user).
+- **`scripts-dev/e2e/sidebar.mjs CODE`**: the sidebar panel: tab placement, connect form (malformed code refused), connect, settings saved from the form, the Roll button posting one roll and releasing the bridge, the tab pip, the Continuous toggle, the right-click popout, and Disconnect. Joins as `FOUNDRY_USER` (default Gamemaster).
 - **`scripts-dev/e2e/dsn.mjs CODE`**: Dice So Nice end to end. Needs Dice So Nice in `Data/modules`; it enables it in the world and leaves it on, with Dice So Nice's "Disabled for manually entered rolls" on and DiceVision's mode Off. Joins as `FOUNDRY_USER` (default Gamemaster), which must be a GM. It records Dice So Nice's own animate decision (`diceSoNiceMessagePreProcess`), so it doesn't depend on WebGL. Checks:
   - a Replace roll (method stripped, marked physical, animates, tooltip icons in core's template and dnd5e's breakdown)
   - a Replace roll filled by Submit (digital: animates, no icon, throws allowed)
@@ -232,6 +244,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → no chat posts and no buttons (per-die Dice Configuration dialogs still fill); mode `chat` → requested or continuous rolls appear in chat
 - [ ] `/dv` commands typed into the chat box (v14: rich-text editor)
+- [ ] Sidebar camera tab (v13+): connect form when disconnected, settings once connected, right-click popout; v12 loads without it
 - [ ] Replace: `/roll 2d20kh+1d6+3` opens the dialog, fills from one physical roll, posts the right total, then `cancel`
 - [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally (the arrow, for explode/reroll dice)
 - [ ] Replace: dnd5e attack, damage and save rolls from a character sheet

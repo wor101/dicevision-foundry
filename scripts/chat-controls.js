@@ -1,7 +1,8 @@
 /**
  * Chat sidebar controls and /dv chat commands.
  *
- * In Chat and Replace mode two buttons sit with the chat message-mode buttons:
+ * In Chat and Replace mode two buttons sit with the chat message-mode buttons
+ * (the sidebar panel in sidebar-tab.js has the same two, plus settings):
  * - Dice: post the next physical roll to chat (click again to cancel)
  * - Repeat: toggle continuous mode (post every roll)
  * In Replace mode, a Foundry roll dialog waiting for dice takes rolls first.
@@ -9,7 +10,7 @@
 
 const MODULE_ID = "dicevision";
 const CONTROLS_CLASS = "dicevision-controls";
-const SESSION_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
+export const SESSION_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
 
 /**
  * @param {import("./dicevision-client.js").DiceVisionClient} client
@@ -147,19 +148,11 @@ async function handleCommand(client, [sub = "help", arg]) {
       await reply("DICEVISION.Commands.ModeSet", { mode: arg.toLowerCase() });
       break;
 
-    case "connect": {
+    case "connect":
       if (!arg) return reply("DICEVISION.Commands.Help");
       if (!SESSION_CODE_PATTERN.test(arg)) return reply("DICEVISION.Commands.InvalidCode", { code: arg });
-      const normalize = code => code.toUpperCase().replace(/-/g, "");
-      if (normalize(arg) === normalize(game.settings.get(MODULE_ID, "sessionCode"))) {
-        // Foundry skips onChange when a setting is saved unchanged
-        client.connect(arg);
-      } else {
-        // Saving a new code connects via the setting's onChange
-        await game.settings.set(MODULE_ID, "sessionCode", arg);
-      }
+      await connectWithCode(client, arg);
       break;
-    }
 
     case "disconnect":
       if (!client.isConnected() && !client.reconnectTimeout) return reply("DICEVISION.Commands.AlreadyDisconnected");
@@ -183,6 +176,25 @@ async function handleCommand(client, [sub = "help", arg]) {
     default:
       await reply("DICEVISION.Commands.Help");
   }
+}
+
+/**
+ * Save a session code and connect to it (/dv connect, the sidebar panel).
+ * @param {import("./dicevision-client.js").DiceVisionClient} client
+ * @param {string} code
+ * @returns {Promise<boolean>} false if the code isn't a session code
+ */
+export async function connectWithCode(client, code) {
+  if (!SESSION_CODE_PATTERN.test(code)) return false;
+  const normalize = c => c.toUpperCase().replace(/-/g, "");
+  if (normalize(code) === normalize(game.settings.get(MODULE_ID, "sessionCode"))) {
+    // Foundry skips onChange when a setting is saved unchanged
+    client.connect(code);
+  } else {
+    // Saving a new code connects via the setting's onChange
+    await game.settings.set(MODULE_ID, "sessionCode", code);
+  }
+  return true;
 }
 
 /** Post a message only the current user can see. */

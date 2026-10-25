@@ -142,6 +142,7 @@ const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
 const chatControls = await import("../scripts/chat-controls.js");
 const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
+const { panelStatus, formatCode } = await import("../scripts/sidebar-tab.js");
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -2677,6 +2678,49 @@ await interceptTest("replace: a roll with no dice list shows EmptyRoll and keeps
   await flush();
   check(app.notice() === "DICEVISION.Fulfillment.EmptyRoll", `notice ${app.notice()}`);
   check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
+});
+
+// ---------------------------------------------------------------------------
+// Sidebar panel (pure parts; the tab itself needs Foundry's ApplicationV2)
+// ---------------------------------------------------------------------------
+
+await test("sidebar: formatCode shows the dashed display format", () => {
+  check(formatCode("XKRM4N7B") === "XKRM-4N7B", "plain code gets a dash");
+  check(formatCode("xkrm-4n7b") === "XKRM-4N7B", "lower-case dashed code is normalized");
+  check(formatCode(null) === "" && formatCode("") === "", "no code is empty");
+  check(formatCode("ABC") === "ABC", "a short code is left alone");
+});
+
+await test("sidebar: panelStatus follows the client state", (c) => {
+  const status = () => panelStatus(c.getState());
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected at first");
+
+  settings.continuous = false;
+  c.connect("XKRM-4N7B");
+  let s = status();
+  check(s.key === "DICEVISION.Sidebar.Status.Connecting" && s.data.code === "XKRM-4N7B", `connecting while the socket opens: ${s.key}`);
+
+  sockets[0].open();
+  sockets[0].confirm();
+  s = status();
+  check(s.key === "DICEVISION.Sidebar.Status.Connected" && s.css === "connected", `connected: ${s.key}`);
+
+  sockets[0].serverClose(1006);
+  s = status();
+  check(s.key === "DICEVISION.Sidebar.Status.Reconnecting" && s.data.attempt === 1 && s.data.max === 5,
+    `reconnecting after a drop: ${JSON.stringify(s)}`);
+
+  c.disconnect();
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected after disconnect()");
+});
+
+await test("sidebar: connectWithCode saves a new code and reconnects a saved one", async (c) => {
+  const { connectWithCode } = chatControls;
+  settings.sessionCode = "";
+  check((await connectWithCode(c, "nope")) === false && sockets.length === 0, "invalid code: rejected, nothing opened");
+  check((await connectWithCode(c, "xkrm-4n7b")) === true, "valid code accepted");
+  check(settings.sessionCode === "xkrm-4n7b" && sockets.length === 1, "new code saved and connected via onChange");
+  check((await connectWithCode(c, "XKRM4N7B")) === true && sockets.length === 2, "same code: reconnects directly");
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);

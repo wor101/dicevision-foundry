@@ -26,10 +26,9 @@ To install a specific pre-release, use its tag's URL instead, e.g. `https://gith
 
 1. Go to [dicevision.dirtyowlbear.com](https://dicevision.dirtyowlbear.com) and create a session in **Settings**
 2. Copy the 8-character session code (e.g., `XKRM-4N7B` — the dash is optional)
-3. In Foundry, go to **Settings** → **Module Settings** → **DiceVision**
-4. Paste the session code
-5. Set **Operating Mode** to **Replace** (or **Chat**, below)
-6. Roll in Foundry as usual, e.g. `/roll 1d20+5` or an attack from a character sheet. A dialog opens and waits; roll the physical dice in front of your camera and Foundry uses them.
+3. In Foundry, click the camera tab in the sidebar (just above Settings), paste the session code and click **Connect**. On Foundry v12, use **Settings** → **Module Settings** → **DiceVision** instead, or `/dv connect <code>` in chat
+4. Once connected, the same panel shows DiceVision's settings. Set **Operating Mode** to **Replace** (or **Chat**, below)
+5. Roll in Foundry as usual, e.g. `/roll 1d20+5` or an attack from a character sheet. A dialog opens and waits; roll the physical dice in front of your camera and Foundry uses them.
 
 ## Replace mode
 
@@ -89,6 +88,15 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 - Physical dice are never handed back for an interactive (mouse) throw.
 - The GM can turn this off with **Show 3D Dice (Dice So Nice!)** in DiceVision's settings. Replace-mode rolls then follow Dice So Nice's Disabled for manually entered rolls setting, and Chat-mode cards don't animate.
 - On Foundry v13 and later, the camera icon in a roll's tooltip marks dice with at least one die from the camera (in Foundry's tooltip and dnd5e's roll breakdown).
+
+## Sidebar panel (Foundry v13+)
+
+The camera tab in the sidebar opens DiceVision's panel. Right-click the tab to pop it out as a window.
+
+- **Not connected:** a session code field and **Connect**.
+- **Connected (or reconnecting):** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. The tab icon turns green while connected, and its pip lights while DiceVision is waiting for dice.
+
+The same settings are in **Settings** → **Module Settings** → **DiceVision**.
 
 ## Settings
 
