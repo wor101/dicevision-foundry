@@ -142,7 +142,8 @@ const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
 const chatControls = await import("../scripts/chat-controls.js");
 const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
-const { panelStatus, formatCode, registerSidebarTab } = await import("../scripts/sidebar-tab.js");
+const { panelStatus, formatCode, registerSidebarTab, tabFace, FACES } = await import("../scripts/sidebar-tab.js");
+const { readFileSync, existsSync } = await import("node:fs");
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -2695,21 +2696,25 @@ await test("sidebar: formatCode shows the code as DiceVision does (no hyphen)", 
 await test("sidebar: panelStatus follows the client state", (c) => {
   const status = () => panelStatus(c.getState());
   check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected at first");
+  check(status().face === "perturbed", "disconnected: perturbed face");
 
   settings.continuous = false;
   c.connect("XKRM-4N7B");
   let s = status();
+  check(s.face === "worried", "connecting: worried face");
   check(s.key === "DICEVISION.Sidebar.Status.Connecting" && s.data.code === "XKRM4N7B", `connecting while the socket opens (code ${s.data.code}): ${s.key}`);
 
   sockets[0].open();
   sockets[0].confirm();
   s = status();
   check(s.key === "DICEVISION.Sidebar.Status.Connected" && s.css === "connected", `connected: ${s.key}`);
+  check(s.face === "original", "connected: original face");
 
   sockets[0].serverClose(1006);
   s = status();
   check(s.key === "DICEVISION.Sidebar.Status.Reconnecting" && s.data.attempt === 1 && s.data.max === 5,
     `reconnecting after a drop: ${JSON.stringify(s)}`);
+  check(s.face === "worried", "reconnecting: worried face");
 
   // The retry opens a new socket: still reconnecting until the server confirms
   runTimers();
@@ -2725,9 +2730,81 @@ await test("sidebar: panelStatus follows the client state", (c) => {
   }
   check(!c.getState().sessionActive && c.getState().reconnectAttempt === 0, "gave up: session inactive, counter reset");
   check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "gave up: Disconnected");
+  check(status().face === "perturbed", "gave up: perturbed face");
 
   c.disconnect();
   check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected after disconnect()");
+});
+
+await test("sidebar: tabFace follows the client state (unlike the panel, disconnected is the plain mark)", (c) => {
+  const face = () => tabFace(c.getState());
+  settings.continuous = false;
+  check(face() === "original", "disconnected at first: original");
+
+  c.connect("XKRM4N7B");
+  check(face() === "worried", "connecting: worried");
+  sockets[0].open();
+  sockets[0].confirm();
+  check(face() === "original", "connected, idle: original");
+
+  c.requestRoll();
+  check(face() === "worried", "dice-button request pending: worried");
+  c.cancelRequest();
+  check(face() === "original", "request cancelled: original");
+
+  const consumer = fakeConsumer(c, 1);
+  check(face() === "worried", "roll dialog waiting: worried");
+  consumer.remove();
+  check(face() === "original", "dialog closed: original");
+
+  settings.continuous = true;
+  Hooks.callAll("dicevision.continuousChanged", true);
+  check(face() === "worried", "continuous mode: worried all the time");
+  settings.continuous = false;
+  Hooks.callAll("dicevision.continuousChanged", false);
+
+  sockets[0].serverClose(1006);
+  check(face() === "worried", "reconnect pending: worried");
+  runTimers();
+  check(face() === "worried", "retry socket opening: worried");
+  // Four more drops reach the fifth attempt; the next gives up (a real socket closes once)
+  for (let i = 0; i < 5; i++) {
+    sockets.at(-1).serverClose(1006);
+    runTimers();
+  }
+  check(!c.getState().sessionActive && face() === "original", "gave up: original, not perturbed");
+  c.disconnect();
+  check(face() === "original", "after disconnect(): original");
+});
+
+await test("sidebar: every face has a shipped SVG and a CSS rule, and the pure functions stay within FACES", () => {
+  const root = new URL("..", import.meta.url).pathname;
+  const css = readFileSync(`${root}styles/dicevision.css`, "utf8");
+  for (const face of FACES) {
+    const svg = `${root}assets/icons/owlbear-face-${face}.svg`;
+    check(existsSync(svg), `${face}: SVG shipped`);
+    const text = existsSync(svg) ? readFileSync(svg, "utf8") : "";
+    check(/^<svg [^>]*viewBox="0 0 24 24"/.test(text) && text.trimEnd().endsWith("</svg>") && !/<(image|script|style)|href=/.test(text),
+      `${face}: single self-contained 24x24 SVG`);
+    const rule = face === "original" ? ".dicevision-owlbear::before" : `.dicevision-owlbear.dicevision-face-${face}::before`;
+    check(css.includes(rule) && css.includes(`owlbear-face-${face}.svg`), `${face}: CSS rule masks its SVG`);
+  }
+  for (const url of css.match(/assets\/icons\/[\w.-]+\.svg/g) ?? []) {
+    check(existsSync(`${root}${url}`), `CSS url ${url} exists`);
+  }
+  // Every face the pure functions can return is one of FACES
+  const base = { connected: false, sessionActive: false, waiting: false, dialogWaiting: false, reconnectAttempt: 0, reconnectMax: 5 };
+  const states = [
+    base,
+    { ...base, sessionActive: true },
+    { ...base, sessionActive: true, reconnectAttempt: 2 },
+    { ...base, sessionActive: true, connected: true },
+    { ...base, sessionActive: true, connected: true, waiting: true },
+    { ...base, sessionActive: true, connected: true, dialogWaiting: true }
+  ];
+  for (const state of states) {
+    check(FACES.includes(tabFace(state)) && FACES.includes(panelStatus(state).face), `faces within FACES for ${JSON.stringify(state)}`);
+  }
 });
 
 await test("sidebar: an invalid session mid-retry resets the counter", (c) => {

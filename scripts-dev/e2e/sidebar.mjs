@@ -23,6 +23,20 @@ const check = (cond, msg) => {
 };
 
 const TAB = '#sidebar-tabs [data-tab="dicevision"]';
+/** The one dicevision-face-* class on an element, or null if there isn't exactly one. */
+const faceOf = (page, sel) => page.$eval(sel, el => {
+  const faces = [...el.classList].filter(c => c.startsWith('dicevision-face-')).map(c => c.slice('dicevision-face-'.length));
+  return faces.length === 1 ? faces[0] : null;
+});
+/** The owlbear mask on an element's ::before: its face name, size, and whether the SVG URL fetches. */
+const maskOf = (page, sel) => page.$eval(sel, async el => {
+  const cs = getComputedStyle(el, '::before');
+  const image = cs.maskImage || cs.webkitMaskImage || '';
+  const url = (image.match(/url\("?([^")]+)"?\)/) || [])[1];
+  const face = (image.match(/owlbear-face-(\w+)\.svg/) || [])[1] ?? null;
+  const fetched = url ? (await fetch(url)).ok : false;
+  return { face, size: parseFloat(cs.width), fetched };
+});
 const PANEL = '#dicevision.sidebar-tab';
 const plain = code.replace(/-/g, '').toUpperCase(); // how the module shows and saves it
 
@@ -51,6 +65,11 @@ try {
   await page.click(TAB);
   await page.waitForSelector(`${PANEL}.active form.dicevision-panel-connect`, { timeout: 5000 });
   check((await status()).css === 'disconnected', 'disconnected: status line and connect form');
+  let m = await maskOf(page, TAB);
+  check(m.face === 'original' && m.size > 10 && m.fetched, `disconnected: tab owlbear mask resolves ${JSON.stringify(m)}`);
+  check((await faceOf(page, TAB)) === 'original', 'disconnected: one face class, original');
+  m = await maskOf(page, `${PANEL} .dicevision-panel-status i`);
+  check(m.face === 'perturbed' && m.fetched, `disconnected: status line perturbed ${JSON.stringify(m)}`);
   check(await page.$(`${PANEL} form.dicevision-panel-settings`) === null, 'disconnected: no settings shown');
 
   // A malformed code is refused without touching the setting
@@ -70,6 +89,9 @@ try {
   check(connected.css === 'connected' && connected.text.includes(plain) && !connected.text.includes('-'), `connected: status "${connected.text}"`);
   check((await page.evaluate(() => game.settings.get('dicevision', 'sessionCode'))) === plain, 'session code saved without a hyphen');
   check(await page.$eval(TAB, el => el.classList.contains('dicevision-connected')), 'tab icon tinted while connected');
+  check((await faceOf(page, TAB)) === 'original' && (await maskOf(page, TAB)).face === 'original', 'connected: tab face original');
+  m = await maskOf(page, `${PANEL} .dicevision-panel-status i`);
+  check(m.face === 'original' && m.fetched, `connected: status line original ${JSON.stringify(m)}`);
 
   // Settings save through game.settings (mode has an onChange hook, rollLabel doesn't)
   await page.selectOption(`${PANEL} select[name="mode"]`, 'replace');
@@ -94,6 +116,7 @@ try {
   await page.click(`${PANEL} [data-dv="request"]`);
   await page.waitForSelector(`${PANEL} [data-dv="request"].dicevision-waiting`, { timeout: 5000 });
   check(await page.$eval(TAB, el => el.parentElement.querySelector('.notification-pip').classList.contains('active')), 'tab pip lit while waiting');
+  check((await faceOf(page, TAB)) === 'worried' && (await maskOf(page, TAB)).face === 'worried', 'waiting: tab face worried');
   await dash.exited();
   check(dash.count('roll_sent') === 1 && (await newMessages()) === 1, 'Roll button: one roll posted to chat');
   check(dash.count('cancelled') === 1, 'Roll button: bridge released after the roll');
@@ -111,6 +134,8 @@ try {
   await page.click(TAB, { button: 'right' });
   await page.waitForSelector('#dicevision-popout form.dicevision-panel-settings', { timeout: 5000 });
   check(true, 'right-click opens the popout with settings');
+  m = await maskOf(page, '#dicevision-popout .window-header .window-icon');
+  check(m.face === 'original' && m.size > 10, `popout header owlbear ${JSON.stringify(m)}`);
   await page.evaluate(() => ui.sidebar.popouts.dicevision?.close());
 
   // Disconnect returns to the connect form, with the code kept in the field

@@ -180,7 +180,8 @@
 .dicevision-panel-status.connected { color: var(--color-level-success, #4caf50); }
 .dicevision-panel-status.connecting,
 .dicevision-panel-status.reconnecting { color: var(--color-level-warning, #ee9b3a); }
-.dicevision-panel-status i { font-size: 1.25em; }
+/* ~20px: the worried and perturbed brows need more than 16px to read */
+.dicevision-panel-status i { font-size: 1.5em; }
 .dicevision-panel-status.connecting i,
 .dicevision-panel-status.reconnecting i { animation: dicevision-pulse 1.5s ease-in-out infinite; }
 

@@ -94,7 +94,7 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 The owlbear tab in the sidebar opens DiceVision's panel. Right-click the tab to pop it out as a window.
 
 - **Not connected:** a session code field and **Connect**.
-- **Connected:** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. Roll and Continuous are enabled once connected and the mode isn't Off. While connecting or reconnecting, the status says so and only Disconnect and the settings are usable. The owlbear turns green while connected (amber, and worried, while connecting), looks worried while waiting for dice, and the tab's pip lights too.
+- **Connected:** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. Roll and Continuous are enabled once connected and the mode isn't Off. While connecting or reconnecting, the status says so and only Disconnect and the settings are usable. The tab's owlbear turns green while connected (amber while connecting) and looks worried while DiceVision waits for dice, when the tab's pip lights too. The status line's owlbear is worried while connecting or reconnecting and perturbed when not connected.
 
 The same settings are in **Settings** → **Module Settings** → **DiceVision**.
 

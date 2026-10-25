@@ -1,8 +1,8 @@
 /**
  * DiceVision sidebar tab (Foundry v13+).
  *
- * A camera icon in the sidebar's tab bar, like Dice So Nice's d20, opens a
- * panel. Not connected: a session code field and Connect. With a session
+ * An owlbear face (the DirtyOwlbear mascot) in the sidebar's tab bar, like
+ * Dice So Nice's d20, opens a panel. Not connected: a session code field and Connect. With a session
  * active (connected, connecting, or reconnecting): the connection status,
  * Roll / Continuous / Disconnect buttons, and the module's settings. Changes
  * save through game.settings, so the settings' onChange hooks still drive
@@ -20,10 +20,18 @@ const MODULE_ID = "dicevision";
 export const TAB_NAME = "dicevision";
 /**
  * The tab's icon class. The sidebar puts it on the tab <button>, where a
- * Font Awesome class would go; dicevision-owlbear draws the owlbear face
- * from assets/icons with a CSS mask, so it follows the button's colours.
+ * Font Awesome class would go; .dicevision-owlbear (styles/dicevision.css)
+ * draws the owlbear face from assets/icons with a CSS mask, so it follows
+ * the button's colours. updateTabButton adds the expression class.
  */
 const TAB_ICON = "dicevision-owlbear";
+
+/**
+ * Every expression in assets/icons/owlbear-face-<expression>.svg. Each needs
+ * a `.dicevision-owlbear.dicevision-face-<expression>` rule in
+ * styles/dicevision.css; tabFace and panelStatus return one of these.
+ */
+export const FACES = ["original", "worried", "confused", "perturbed", "grumpy", "startled"];
 const TEMPLATE = `modules/${MODULE_ID}/templates/sidebar-tab.hbs`;
 
 /** Settings the panel edits in place, in display order. */
@@ -67,9 +75,13 @@ export function panelStatus(state) {
 }
 
 /**
- * The tab icon's expression: worried while connecting or waiting for dice,
- * otherwise the plain mark.
+ * The tab icon's expression: worried while a session is active but not
+ * connected (the first connect, reconnects and the wait between attempts),
+ * or while DiceVision wants a roll (a dice-button request, an open roll
+ * dialog, or all the time in continuous mode, like the pip); otherwise the
+ * plain mark.
  * @param {{connected: boolean, sessionActive: boolean, waiting: boolean, dialogWaiting: boolean}} state
+ * @returns {string} one of FACES
  */
 export function tabFace(state) {
   if (state.sessionActive && !state.connected) return "worried";
@@ -284,8 +296,6 @@ function renderPanel() {
   app.render().catch(err => console.error("[DiceVision] Sidebar panel re-render failed:", err));
 }
 
-const FACES = ["original", "worried", "confused", "perturbed", "grumpy", "startled"];
-
 /**
  * Tint the tab icon by connection state (connecting covers the first
  * connect and reconnects), give it the expression for the state, and light
@@ -298,7 +308,7 @@ function updateTabButton(state) {
     // Expected before the sidebar's first render; afterwards the markup changed
     if (ui.sidebar?.rendered && !markupWarned) {
       markupWarned = true;
-      console.warn(`[DiceVision] Sidebar tab ${button ? "pip" : "button"} not found; the tab's connection tint and waiting pip are off`);
+      console.warn(`[DiceVision] Sidebar tab ${button ? "pip" : "button"} not found; the tab's connection tint, expression and waiting pip are off`);
     }
     return;
   }
