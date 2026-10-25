@@ -23,9 +23,14 @@ Hooks.once("init", () => {
 
   registerSettings();
   registerChatControls(diceVisionClient);
-  registerSidebarTab(diceVisionClient);
   registerRollIntercept(diceVisionClient);
   registerDiceSoNice();
+  // Last, and isolated: a failure here must not take Replace mode down with it
+  try {
+    registerSidebarTab(diceVisionClient);
+  } catch (err) {
+    console.error("[DiceVision] Sidebar tab not registered; use Game Settings or /dv connect:", err);
+  }
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);

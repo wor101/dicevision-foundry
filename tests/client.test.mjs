@@ -142,7 +142,7 @@ const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
 const chatControls = await import("../scripts/chat-controls.js");
 const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
-const { panelStatus, formatCode } = await import("../scripts/sidebar-tab.js");
+const { panelStatus, formatCode, registerSidebarTab } = await import("../scripts/sidebar-tab.js");
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -2710,8 +2710,47 @@ await test("sidebar: panelStatus follows the client state", (c) => {
   check(s.key === "DICEVISION.Sidebar.Status.Reconnecting" && s.data.attempt === 1 && s.data.max === 5,
     `reconnecting after a drop: ${JSON.stringify(s)}`);
 
+  // The retry opens a new socket: still reconnecting until the server confirms
+  runTimers();
+  check(status().key === "DICEVISION.Sidebar.Status.Reconnecting" && sockets.length === 2, "still reconnecting while the retry socket opens");
+  sockets[1].open();
+  sockets[1].confirm();
+  check(status().key === "DICEVISION.Sidebar.Status.Connected" && c.getState().reconnectAttempt === 0, "connected again, counter reset");
+
+  // Five failed retries: Disconnected, not a stale "Reconnecting (5/5)"
+  for (let i = 0; i < 6; i++) {
+    sockets.at(-1).serverClose(1006);
+    runTimers();
+  }
+  check(!c.getState().sessionActive && c.getState().reconnectAttempt === 0, "gave up: session inactive, counter reset");
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "gave up: Disconnected");
+
   c.disconnect();
   check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected after disconnect()");
+});
+
+await test("sidebar: an invalid session mid-retry resets the counter", (c) => {
+  settings.continuous = false;
+  connectConfirmed(c);
+  sockets[0].serverClose(1006);
+  runTimers();
+  sockets[1].serverClose(4001);
+  check(!c.getState().sessionActive && c.getState().reconnectAttempt === 0, "4001: session inactive, counter reset");
+  check(panelStatus(c.getState()).key === "DICEVISION.Sidebar.Status.Disconnected", "4001: Disconnected");
+});
+
+await test("sidebar: registerSidebarTab returns false without the v13 API and touches nothing", (c) => {
+  // The harness has no CONFIG.ui or foundry.applications, like Foundry v12
+  const before = Object.keys(hooks).length;
+  let result;
+  try {
+    result = registerSidebarTab(c);
+  } catch (err) {
+    result = err;
+  }
+  check(result === false, `returns false, no throw: ${result}`);
+  check(Object.keys(hooks).length === before, "registers no hooks");
+  check(!(globalThis.CONFIG?.ui), "leaves CONFIG.ui alone");
 });
 
 await test("sidebar: connectWithCode saves a new code and reconnects a saved one", async (c) => {
@@ -2721,6 +2760,19 @@ await test("sidebar: connectWithCode saves a new code and reconnects a saved one
   check((await connectWithCode(c, "xkrm-4n7b")) === true, "valid code accepted");
   check(settings.sessionCode === "xkrm-4n7b" && sockets.length === 1, "new code saved and connected via onChange");
   check((await connectWithCode(c, "XKRM4N7B")) === true && sockets.length === 2, "same code: reconnects directly");
+
+  // The onChange hook failing to connect (Foundry only logs hook errors) is reported
+  settings.sessionCode = "";
+  c.disconnect();
+  globalThis.WebSocket = class { constructor() { throw new Error("no sockets"); } };
+  let error;
+  try {
+    await connectWithCode(c, "ABCD-2345");
+  } catch (err) {
+    error = err;
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  check(error instanceof Error && !c.getState().sessionActive, `throws when no connection started: ${error?.message}`);
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);

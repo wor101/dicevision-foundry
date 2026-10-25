@@ -9,11 +9,12 @@
  * the client, and Game Settings shows the same values.
  *
  * Right-clicking the tab pops the panel out as a window (core behaviour for
- * every sidebar tab). On v12 the sidebar has no tab registry, so nothing is
- * added and the Game Settings route remains.
+ * every sidebar tab). On v12 none of Sidebar.TABS, AbstractSidebarTab or
+ * HandlebarsApplicationMixin exist, so nothing is added and the Game Settings
+ * route remains.
  */
 
-import { connectWithCode } from "./chat-controls.js";
+import { connectWithCode, toggleRollRequest } from "./chat-controls.js";
 
 const MODULE_ID = "dicevision";
 export const TAB_NAME = "dicevision";
@@ -62,11 +63,13 @@ export function panelStatus(state) {
  * @returns {boolean} Whether the tab was registered (false on v12)
  */
 export function registerSidebarTab(client) {
-  const tabs = CONFIG.ui?.sidebar?.TABS;
-  const AbstractSidebarTab = foundry.applications?.sidebar?.AbstractSidebarTab;
-  const HandlebarsApplicationMixin = foundry.applications?.api?.HandlebarsApplicationMixin;
+  const tabs = globalThis.CONFIG?.ui?.sidebar?.TABS;
+  const AbstractSidebarTab = globalThis.foundry?.applications?.sidebar?.AbstractSidebarTab;
+  const HandlebarsApplicationMixin = globalThis.foundry?.applications?.api?.HandlebarsApplicationMixin;
   if (!tabs || !AbstractSidebarTab || !HandlebarsApplicationMixin) {
-    console.log("[DiceVision] Sidebar tab needs Foundry v13+; use Game Settings or /dv connect");
+    const missing = [tabs || "CONFIG.ui.sidebar.TABS", AbstractSidebarTab || "AbstractSidebarTab",
+      HandlebarsApplicationMixin || "HandlebarsApplicationMixin"].filter(m => typeof m === "string");
+    console.log(`[DiceVision] No sidebar tab on Foundry ${globalThis.game?.version ?? "?"} (missing ${missing.join(", ")}; needs v13+). Use Game Settings or /dv connect.`);
     return false;
   }
 
@@ -107,6 +110,11 @@ export function registerSidebarTab(client) {
       const settings = Object.fromEntries(
         [...PANEL_SETTINGS, "continuous", "diceSoNice"].map(key => [key, game.settings.get(MODULE_ID, key)])
       );
+      // A text setting being typed (saved on blur) keeps its unsaved text too
+      const active = globalThis.document?.activeElement;
+      if (active?.type === "text" && active.name in settings && this.element?.contains(active)) {
+        settings[active.name] = active.value;
+      }
       const choices = key => game.settings.settings.get(`${MODULE_ID}.${key}`)?.choices ?? {};
 
       return Object.assign(context, {
@@ -136,20 +144,25 @@ export function registerSidebarTab(client) {
       });
       this.element.querySelector("form.dicevision-panel-settings")
         ?.addEventListener("change", event => this.#onSettingChange(event));
-      // Restore focus to the code field if the user was typing in it
-      if (this.#codeHadFocus) {
-        this.element.querySelector('input[name="sessionCode"]')?.focus();
-        this.#codeHadFocus = false;
-      }
+      // Core restores focus by element id across a re-render, so a field being typed in keeps it
     }
 
-    #codeHadFocus = false;
-
-    /** @override */
-    async _preRender(context, options) {
-      await super._preRender(context, options);
-      const active = globalThis.document?.activeElement;
-      this.#codeHadFocus = !!active && active.name === "sessionCode" && !!this.element?.contains(active);
+    /**
+     * A render failure (e.g. the template didn't load) is toasted once, so
+     * the user knows to fall back to Game Settings or /dv connect; the
+     * error still reaches Foundry's own logging.
+     * @override
+     */
+    async render(...args) {
+      try {
+        return await super.render(...args);
+      } catch (err) {
+        if (!renderFailed) {
+          renderFailed = true;
+          reportFailure("panel", err);
+        }
+        throw err;
+      }
     }
 
     /** @param {HTMLFormElement} form */
@@ -178,15 +191,19 @@ export function registerSidebarTab(client) {
       } catch (err) {
         reportFailure(key, err);
       }
-      // Settings without an onChange hook don't trigger a state change
-      this.render();
+      // Settings without an onChange hook don't trigger a state change, so
+      // re-render unconditionally. Through the sidebar instance: it renders
+      // the popout too, while a popout render doesn't reach the sidebar.
+      renderPanel();
     }
 
     /** @this {DiceVisionSidebarTab} */
     static #onRequestRoll() {
-      const state = client.getState();
-      if (state.waiting && !state.continuous) client.cancelRequest();
-      else client.requestRoll();
+      try {
+        toggleRollRequest(client);
+      } catch (err) {
+        reportFailure("roll", err);
+      }
     }
 
     /** @this {DiceVisionSidebarTab} */
@@ -200,8 +217,12 @@ export function registerSidebarTab(client) {
 
     /** @this {DiceVisionSidebarTab} */
     static #onDisconnect() {
-      client.disconnect();
-      ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.Disconnected"));
+      try {
+        client.disconnect();
+        ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.Disconnected"));
+      } catch (err) {
+        reportFailure("disconnect", err);
+      }
     }
   }
 
@@ -219,8 +240,7 @@ export function registerSidebarTab(client) {
   }
 
   const refresh = () => {
-    const app = ui[TAB_NAME];
-    if (app?.rendered) app.render();
+    renderPanel();
     updateTabButton(client.getState());
   };
   Hooks.on("dicevision.stateChanged", refresh);
@@ -229,22 +249,51 @@ export function registerSidebarTab(client) {
   return true;
 }
 
+/** A render of the panel failed and was toasted; later failures only log. */
+let renderFailed = false;
+/** Tab button or pip not found after the sidebar rendered; warned once. */
+let markupWarned = false;
+
 /**
- * Tint the tab icon by connection state, and light its notification pip
- * while DiceVision waits for dice.
+ * Re-render the in-sidebar panel, which re-renders its popout too. Render
+ * failures reject instead of throwing, so they're caught here.
+ */
+function renderPanel() {
+  const app = ui[TAB_NAME];
+  if (!app?.rendered) return;
+  app.render().catch(err => console.error("[DiceVision] Sidebar panel re-render failed:", err));
+}
+
+/**
+ * Tint the tab icon by connection state (connecting covers the first
+ * connect and reconnects), and light its notification pip while DiceVision
+ * waits for dice.
  */
 function updateTabButton(state) {
   const button = globalThis.document?.querySelector(`#sidebar-tabs [data-tab="${TAB_NAME}"]`);
-  if (!button) return;
+  const pip = button?.parentElement?.querySelector(".notification-pip");
+  if (!button || !pip) {
+    // Expected before the sidebar's first render; afterwards the markup changed
+    if (ui.sidebar?.rendered && !markupWarned) {
+      markupWarned = true;
+      console.warn(`[DiceVision] Sidebar tab ${button ? "pip" : "button"} not found; the tab's connection tint and waiting pip are off`);
+    }
+    return;
+  }
   button.classList.toggle("dicevision-connected", state.connected);
-  button.classList.toggle("dicevision-reconnecting", state.sessionActive && !state.connected);
-  const waiting = state.connected && (state.waiting || state.dialogWaiting);
-  button.parentElement?.querySelector(".notification-pip")?.classList.toggle("active", waiting);
+  button.classList.toggle("dicevision-connecting", state.sessionActive && !state.connected);
+  pip.classList.toggle("active", state.connected && (state.waiting || state.dialogWaiting));
 }
 
+/**
+ * Log and toast a failed panel action. `what` is a setting key (shown by
+ * its localized name) or an action name.
+ */
 function reportFailure(what, err) {
   console.error(`[DiceVision] Sidebar: ${what} failed:`, err);
+  const name = game.settings.settings.get(`${MODULE_ID}.${what}`)?.name;
   ui.notifications.error(game.i18n.format("DICEVISION.Notifications.CommandFailed", {
-    command: what, error: err.message
+    command: name ? game.i18n.localize(name) : what,
+    error: err?.message ?? String(err)
   }));
 }

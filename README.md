@@ -94,7 +94,7 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 The camera tab in the sidebar opens DiceVision's panel. Right-click the tab to pop it out as a window.
 
 - **Not connected:** a session code field and **Connect**.
-- **Connected (or reconnecting):** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. The tab icon turns green while connected, and its pip lights while DiceVision is waiting for dice.
+- **Connected:** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. Roll and Continuous are enabled once connected and the mode isn't Off. While connecting or reconnecting, the status says so and only Disconnect and the settings are usable. The tab icon turns green while connected (amber while connecting), and its pip lights while DiceVision is waiting for dice.
 
 The same settings are in **Settings** → **Module Settings** → **DiceVision**.
 

@@ -117,7 +117,8 @@
   color: var(--color-level-success, #4caf50);
 }
 
-#sidebar-tabs [data-tab="dicevision"].dicevision-reconnecting {
+/* Connecting, or reconnecting after a drop */
+#sidebar-tabs [data-tab="dicevision"].dicevision-connecting {
   color: var(--color-level-warning, #ee9b3a);
 }
 

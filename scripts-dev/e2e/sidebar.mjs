@@ -82,6 +82,11 @@ try {
   await page.waitForFunction(() => game.settings.get('dicevision', 'rollLabel') === 'Panel test', null, { timeout: 5000 });
   check(true, 'roll label saves the setting');
   await page.evaluate(() => game.settings.set('dicevision', 'rollLabel', 'DiceVision'));
+  await page.click(`${PANEL} input[name="autoConnect"]`);
+  await page.waitForFunction(() => game.settings.get('dicevision', 'autoConnect') === false, null, { timeout: 5000 });
+  check(true, 'checkbox saves a boolean');
+  await page.click(`${PANEL} input[name="autoConnect"]`);
+  await page.waitForFunction(() => game.settings.get('dicevision', 'autoConnect') === true, null, { timeout: 5000 });
 
   // Roll button: one roll posted, the pip lights while waiting, bridge released
   let dash = startDashboard(code, ['--max', '1', '--dice', '1d20', '--watch', '3', '--delay', '1500']);

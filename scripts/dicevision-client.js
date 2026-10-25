@@ -127,6 +127,7 @@ export class DiceVisionClient {
           );
           this._warnReplaceDigital();
           this.sessionCode = null;
+          this.reconnectAttempts = 0;
           this.pendingChatRoll = false;
           this._notifyState();
           return;
@@ -297,7 +298,7 @@ export class DiceVisionClient {
    *   reconnectAttempt: number, reconnectMax: number,
    *   mode: string, continuous: boolean, waiting: boolean, dialogWaiting: boolean}}
    *   sessionActive: connected, connecting, or waiting to reconnect
-   *   reconnectAttempt: the current retry (1-based) while reconnecting, else 0
+   *   reconnectAttempt: the current retry (1-based) while reconnecting (sessionActive), else 0
    *   waiting: a chat roll is wanted (dice button, /dv roll, continuous)
    *   dialogWaiting: a Foundry roll dialog is waiting for physical dice
    */
@@ -315,7 +316,10 @@ export class DiceVisionClient {
     };
   }
 
-  /** Tell the UI (chat controls) that connection or waiting state changed. */
+  /**
+   * Fire dicevision.stateChanged with getState(): chat controls, the sidebar
+   * tab, and Replace mode's default fulfillment method listen.
+   */
   _notifyState() {
     Hooks.callAll("dicevision.stateChanged", this.getState());
   }
@@ -544,6 +548,7 @@ export class DiceVisionClient {
       );
       this._warnReplaceDigital();
       this.pendingChatRoll = false;
+      this.reconnectAttempts = 0;
       return;
     }
 

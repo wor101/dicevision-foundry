@@ -30,7 +30,7 @@
   "DICEVISION.Notifications.Disconnected": "DiceVision disconnected",
   "DICEVISION.Notifications.Reconnecting": "DiceVision reconnecting (attempt {attempt}/{max})...",
   "DICEVISION.Notifications.InvalidSession": "DiceVision: Invalid or expired session code",
-  "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in the DiceVision sidebar tab.",
+  "DICEVISION.Notifications.MaxReconnect": "DiceVision: Connection lost. Check your session code in the DiceVision sidebar tab or module settings, or use /dv connect <code>.",
   "DICEVISION.Notifications.DisplayFailed": "DiceVision: Roll received but could not be posted to chat ({error}). See the console for details.",
   "DICEVISION.Notifications.ModeOff": "DiceVision: Mode is set to Off. Use /dv mode replace (or module settings) to roll physical dice for Foundry's rolls, or /dv mode chat to post them to chat.",
   "DICEVISION.Notifications.NoDice": "DiceVision: no dice detected. Roll again in view of the camera.",

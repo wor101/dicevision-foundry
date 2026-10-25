@@ -2,7 +2,8 @@
  * Chat sidebar controls and /dv chat commands.
  *
  * In Chat and Replace mode two buttons sit with the chat message-mode buttons
- * (the sidebar panel in sidebar-tab.js has the same two, plus settings):
+ * (sidebar-tab.js has the same two actions in its panel, alongside the
+ * connect form, Disconnect and the settings):
  * - Dice: post the next physical roll to chat (click again to cancel)
  * - Repeat: toggle continuous mode (post every roll)
  * In Replace mode, a Foundry roll dialog waiting for dice takes rolls first.
@@ -70,10 +71,7 @@ function renderControls(client) {
     controls = document.createElement("div");
     controls.className = CONTROLS_CLASS;
     controls.append(
-      makeButton("request", "fa-dice-d20", () => {
-        if (client.getState().waiting && !client.getState().continuous) client.cancelRequest();
-        else client.requestRoll();
-      }),
+      makeButton("request", "fa-dice-d20", () => toggleRollRequest(client)),
       makeButton("continuous", "fa-repeat", () => {
         game.settings.set(MODULE_ID, "continuous", !game.settings.get(MODULE_ID, "continuous")).catch((err) => {
           console.error("[DiceVision] Failed to toggle continuous mode:", err);
@@ -179,20 +177,36 @@ async function handleCommand(client, [sub = "help", arg]) {
 }
 
 /**
- * Save a session code and connect to it (/dv connect, the sidebar panel).
+ * The dice button: ask for the next physical roll, or withdraw the request
+ * (not in continuous mode, which always wants rolls). Also the sidebar
+ * panel's Roll button.
+ * @param {import("./dicevision-client.js").DiceVisionClient} client
+ */
+export function toggleRollRequest(client) {
+  const state = client.getState();
+  if (state.waiting && !state.continuous) client.cancelRequest();
+  else client.requestRoll();
+}
+
+/**
+ * Save a session code (as typed) and connect to it (/dv connect, the sidebar
+ * panel). A code matching the saved one (ignoring case and the dash)
+ * reconnects without saving, because Foundry skips onChange for an
+ * unchanged setting.
  * @param {import("./dicevision-client.js").DiceVisionClient} client
  * @param {string} code
  * @returns {Promise<boolean>} false if the code isn't a session code
+ * @throws if the saved code didn't start a connection (the onChange hook
+ *   failed; Foundry only logs hook errors)
  */
 export async function connectWithCode(client, code) {
   if (!SESSION_CODE_PATTERN.test(code)) return false;
   const normalize = c => c.toUpperCase().replace(/-/g, "");
   if (normalize(code) === normalize(game.settings.get(MODULE_ID, "sessionCode"))) {
-    // Foundry skips onChange when a setting is saved unchanged
     client.connect(code);
   } else {
-    // Saving a new code connects via the setting's onChange
     await game.settings.set(MODULE_ID, "sessionCode", code);
+    if (!client.getState().sessionActive) throw new Error("connection was not started (see the console)");
   }
   return true;
 }
