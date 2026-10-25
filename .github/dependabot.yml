@@ -10,6 +10,15 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - "dependencies"
+    # ESLint, its recommended config and the globals package move together:
+    # bumped separately, a major of one leaves the others mismatched, and
+    # the PRs conflict in the lockfile (see PR #20)
+    groups:
+      eslint:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "globals"
     # Supply-chain hardening: let new versions age before adopting them
     cooldown:
       default-days: 7
