@@ -111,6 +111,46 @@
   color: var(--color-level-warning, #ee9b3a);
 }
 
+/* Owlbear face icon (design system: OwlbearFaces). A class where a Font
+   Awesome class would go: the face is drawn with a CSS mask on ::before, so
+   it takes the element's colour. The expression is a second class. */
+
+.dicevision-owlbear::before {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background: currentColor;
+  -webkit-mask: url("../assets/icons/owlbear-face-original.svg") center / contain no-repeat;
+  mask: url("../assets/icons/owlbear-face-original.svg") center / contain no-repeat;
+}
+
+.dicevision-owlbear.dicevision-face-worried::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-worried.svg");
+  mask-image: url("../assets/icons/owlbear-face-worried.svg");
+}
+
+.dicevision-owlbear.dicevision-face-confused::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-confused.svg");
+  mask-image: url("../assets/icons/owlbear-face-confused.svg");
+}
+
+.dicevision-owlbear.dicevision-face-perturbed::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-perturbed.svg");
+  mask-image: url("../assets/icons/owlbear-face-perturbed.svg");
+}
+
+.dicevision-owlbear.dicevision-face-grumpy::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-grumpy.svg");
+  mask-image: url("../assets/icons/owlbear-face-grumpy.svg");
+}
+
+.dicevision-owlbear.dicevision-face-startled::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-startled.svg");
+  mask-image: url("../assets/icons/owlbear-face-startled.svg");
+}
+
 /* Sidebar tab (v13+) */
 
 #sidebar-tabs [data-tab="dicevision"].dicevision-connected {
@@ -140,12 +180,9 @@
 .dicevision-panel-status.connected { color: var(--color-level-success, #4caf50); }
 .dicevision-panel-status.connecting,
 .dicevision-panel-status.reconnecting { color: var(--color-level-warning, #ee9b3a); }
+.dicevision-panel-status i { font-size: 1.25em; }
 .dicevision-panel-status.connecting i,
-.dicevision-panel-status.reconnecting i { animation: dicevision-spin 1.5s linear infinite; }
-
-@keyframes dicevision-spin {
-  to { transform: rotate(360deg); }
-}
+.dicevision-panel-status.reconnecting i { animation: dicevision-pulse 1.5s ease-in-out infinite; }
 
 .dicevision-panel-actions {
   display: flex;

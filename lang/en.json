@@ -1,6 +1,6 @@
 {
   "DICEVISION.Settings.SessionCode.Name": "Session Code",
-  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM4N7B). Create one at dicevision.dirtyowlbear.com. The camera tab in the sidebar connects too.",
+  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM4N7B). Create one at dicevision.dirtyowlbear.com. The owlbear tab in the sidebar connects too.",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
   "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry. Replace: every roll (/roll, character sheets) waits for your physical dice while connected; Core \u203a Dice Configuration can still set individual die types (or its Default) to another method.",

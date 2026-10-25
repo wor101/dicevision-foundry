@@ -43,7 +43,7 @@ try {
   const newMessages = () => page.evaluate(n => game.messages.contents.slice(n).length, start);
 
   // The tab sits before Settings and opens the connect form
-  check(await page.$(TAB) !== null, 'camera tab in the sidebar');
+  check(await page.$(TAB) !== null, 'owlbear tab in the sidebar');
   check(await page.evaluate(() => {
     const tabs = [...document.querySelectorAll('#sidebar-tabs [data-tab]')].map(b => b.dataset.tab);
     return tabs.indexOf('dicevision') === tabs.indexOf('settings') - 1;

@@ -26,7 +26,7 @@ To install a specific pre-release, use its tag's URL instead, e.g. `https://gith
 
 1. Go to [dicevision.dirtyowlbear.com](https://dicevision.dirtyowlbear.com) and create a session in **Settings**
 2. Copy the 8-character session code (e.g., `XKRM4N7B`; a hyphen after the 4th character, `XKRM-4N7B`, is accepted too)
-3. In Foundry, click the camera tab in the sidebar (just above Settings), paste the session code and click **Connect**. On Foundry v12, use **Settings** → **Module Settings** → **DiceVision** instead, or `/dv connect <code>` in chat
+3. In Foundry, click the owlbear tab in the sidebar (just above Settings), paste the session code and click **Connect**. On Foundry v12, use **Settings** → **Module Settings** → **DiceVision** instead, or `/dv connect <code>` in chat
 4. Once connected, the same panel shows DiceVision's settings. Set **Operating Mode** to **Replace** (or **Chat**, below)
 5. Roll in Foundry as usual, e.g. `/roll 1d20+5` or an attack from a character sheet. A dialog opens and waits; roll the physical dice in front of your camera and Foundry uses them.
 
@@ -91,10 +91,10 @@ With [Dice So Nice!](https://foundryvtt.com/packages/dice-so-nice) active, physi
 
 ## Sidebar panel (Foundry v13+)
 
-The camera tab in the sidebar opens DiceVision's panel. Right-click the tab to pop it out as a window.
+The owlbear tab in the sidebar opens DiceVision's panel. Right-click the tab to pop it out as a window.
 
 - **Not connected:** a session code field and **Connect**.
-- **Connected:** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. Roll and Continuous are enabled once connected and the mode isn't Off. While connecting or reconnecting, the status says so and only Disconnect and the settings are usable. The tab icon turns green while connected (amber while connecting), and its pip lights while DiceVision is waiting for dice.
+- **Connected:** the connection status, a **Roll physical dice** button (click again to cancel), a **Continuous mode** toggle, **Disconnect**, and the settings below. Roll and Continuous are enabled once connected and the mode isn't Off. While connecting or reconnecting, the status says so and only Disconnect and the settings are usable. The owlbear turns green while connected (amber, and worried, while connecting), looks worried while waiting for dice, and the tab's pip lights too.
 
 The same settings are in **Settings** → **Module Settings** → **DiceVision**.
 

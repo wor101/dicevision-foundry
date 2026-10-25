@@ -3,4 +3,4 @@
 set -euo pipefail
 
 rm -f module.zip
-zip -r module.zip module.json LICENSE README.md lang scripts styles templates
+zip -r module.zip module.json LICENSE README.md assets lang scripts styles templates

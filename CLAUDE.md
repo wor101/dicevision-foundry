@@ -49,9 +49,9 @@ Built on Foundry's dice fulfillment API (v12+), not a `/roll` patch, so it cover
 
 ### Sidebar panel (`sidebar-tab.js`, `templates/sidebar-tab.hbs`)
 
-A camera tab in the sidebar's tab bar, registered the way Dice So Nice registers its d20 tab (Foundry v13+ API; on v12 `registerSidebarTab` logs and returns false, leaving Game Settings and `/dv connect`):
+A owlbear tab in the sidebar's tab bar, registered the way Dice So Nice registers its d20 tab (Foundry v13+ API; on v12 `registerSidebarTab` logs and returns false, leaving Game Settings and `/dv connect`):
 - `CONFIG.ui.dicevision` is a `HandlebarsApplicationMixin(AbstractSidebarTab)` subclass, and `CONFIG.ui.sidebar.TABS.dicevision = { icon, tooltip }` is inserted just before `settings` (delete and re-add `settings` to keep the order). Both in `init`; Foundry instantiates `ui.dicevision` itself. Right-click pops the tab out (core behaviour; the popout is a second instance, so element ids use `this.id`).
-- The `icon` is a class string put on the tab `<button>` (core's `templates/sidebar/tabs.hbs`): any Font Awesome class Foundry bundles (Font Awesome Pro 7 on v14). A module-defined class drawing its own SVG should work but hasn't been tried.
+- The `icon` is a class string put on the tab `<button>` (core's `templates/sidebar/tabs.hbs`), where a Font Awesome class would go. Ours is `dicevision-owlbear`: the owlbear face from the DirtyOwlbear design system (`assets/icons/owlbear-face-<expression>.svg`, six expressions, `fill="currentColor"`), drawn with a CSS mask on `::before` so it takes the button's colour. The expression is a second class, `dicevision-face-<expression>`: `tabFace()` picks worried while connecting or waiting for dice, else original. The panel's status line uses the same classes (`panelStatus().face`: original connected, worried connecting, perturbed disconnected). The design system's OwlbearFaces guidelines map the other expressions (confused: couldn't read; grumpy: hard failure; startled: a critical).
 - Not connected: session code field + Connect, through `connectWithCode()` (shared with `/dv connect`; a bad code marks the field and toasts `Commands.InvalidCode`). With a session active (`sessionActive`): status line (`panelStatus()`, pure), Roll / Continuous / Disconnect buttons (same client calls as the chat buttons), and the settings as a form that saves each `change` through `game.settings.set`, so the settings' `onChange` hooks still drive the client. `diceSoNice` is world-scoped, GM only.
 - `dicevision.stateChanged` re-renders the panel (if rendered) and tints the tab button (`dicevision-connected`, or `dicevision-connecting` for the first connect and reconnects) and lights its `.notification-pip` while waiting for dice. A half-typed session code, or a text setting being typed, survives the re-render: `_prepareContext` reads the current input; core restores focus by element id. `closeSettingsConfig` re-renders too, in case Game Settings changed a value.
 - Renders go through `renderPanel()` (the sidebar instance, which renders the popout too; a popout render doesn't reach the sidebar) and catch the rejection, since a failed `render()` rejects rather than throws. The first failure is toasted (`render` override), later ones only logged. Every action handler catches into `reportFailure` (ApplicationV2 doesn't catch action handlers). `module.js` registers the tab last, in a try/catch, so it can't take Replace mode down.
@@ -105,11 +105,12 @@ dicevision-foundry/
 │   ├── roll-data.js          # Pure: Chat-mode Roll data, strip the dicevision method
 │   ├── dice-so-nice.js       # Dice So Nice: preCreateChatMessage strip, tooltip camera icon
 │   ├── chat-controls.js      # Chat sidebar buttons + /dv commands (v14 passes the hook HTML: plainText())
-│   ├── sidebar-tab.js        # Sidebar camera tab (v13+): connect form, status, roll buttons, settings
+│   ├── sidebar-tab.js        # Sidebar owlbear tab (v13+): connect form, status, roll buttons, settings
 │   └── settings.js           # game.settings registration (client-scoped, except world-scoped diceSoNice)
 ├── templates/
 │   ├── chat-message.hbs      # Fallback chat card (dice Foundry can't roll)
 │   └── sidebar-tab.hbs       # Sidebar panel
+├── assets/icons/             # Owlbear face SVGs from the DirtyOwlbear design system (Mascot group)
 ├── styles/dicevision.css     # Fallback chat card, chat buttons, roll-dialog status, sidebar panel
 ├── lang/en.json              # Localization strings (DICEVISION.*)
 ├── tests/client.test.mjs     # Client tests: node tests/client.test.mjs
@@ -245,7 +246,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → no chat posts and no buttons (per-die Dice Configuration dialogs still fill); mode `chat` → requested or continuous rolls appear in chat
 - [ ] `/dv` commands typed into the chat box (v14: rich-text editor)
-- [ ] Sidebar camera tab (v13+): connect form when disconnected, settings once connected, right-click popout; v12 loads without it
+- [ ] Sidebar owlbear tab (v13+): connect form when disconnected, settings once connected, right-click popout; v12 loads without it
 - [ ] Replace: `/roll 2d20kh+1d6+3` opens the dialog, fills from one physical roll, posts the right total, then `cancel`
 - [ ] Replace: partial / wrong dice keep the dialog waiting with a notice; Submit rolls the rest digitally (the arrow, for explode/reroll dice)
 - [ ] Replace: dnd5e attack, damage and save rolls from a character sheet

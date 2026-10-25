@@ -18,7 +18,12 @@ import { connectWithCode, toggleRollRequest } from "./chat-controls.js";
 
 const MODULE_ID = "dicevision";
 export const TAB_NAME = "dicevision";
-const TAB_ICON = "fa-solid fa-camera";
+/**
+ * The tab's icon class. The sidebar puts it on the tab <button>, where a
+ * Font Awesome class would go; dicevision-owlbear draws the owlbear face
+ * from assets/icons with a CSS mask, so it follows the button's colours.
+ */
+const TAB_ICON = "dicevision-owlbear";
 const TEMPLATE = `modules/${MODULE_ID}/templates/sidebar-tab.hbs`;
 
 /** Settings the panel edits in place, in display order. */
@@ -36,26 +41,40 @@ export function formatCode(code) {
 }
 
 /**
- * The status line for a client state (pure, for tests).
+ * The status line for a client state (pure, for tests). `face` is the
+ * owlbear expression (the design system's OwlbearFaces guidelines): original
+ * for the plain mark, worried while waiting on something, perturbed for a
+ * soft error such as being disconnected.
  * @param {{connected: boolean, sessionActive: boolean, sessionCode: string|null,
  *   reconnectAttempt?: number, reconnectMax?: number}} state
- * @returns {{key: string, css: string, icon: string, data: object}}
+ * @returns {{key: string, css: string, face: string, data: object}}
  */
 export function panelStatus(state) {
   const code = formatCode(state.sessionCode);
   if (state.connected) {
-    return { key: "DICEVISION.Sidebar.Status.Connected", css: "connected", icon: "fa-circle-check", data: { code } };
+    return { key: "DICEVISION.Sidebar.Status.Connected", css: "connected", face: "original", data: { code } };
   }
   if (state.sessionActive && state.reconnectAttempt > 0) {
     return {
-      key: "DICEVISION.Sidebar.Status.Reconnecting", css: "reconnecting", icon: "fa-rotate",
+      key: "DICEVISION.Sidebar.Status.Reconnecting", css: "reconnecting", face: "worried",
       data: { code, attempt: state.reconnectAttempt, max: state.reconnectMax }
     };
   }
   if (state.sessionActive) {
-    return { key: "DICEVISION.Sidebar.Status.Connecting", css: "connecting", icon: "fa-spinner", data: { code } };
+    return { key: "DICEVISION.Sidebar.Status.Connecting", css: "connecting", face: "worried", data: { code } };
   }
-  return { key: "DICEVISION.Sidebar.Status.Disconnected", css: "disconnected", icon: "fa-circle-xmark", data: {} };
+  return { key: "DICEVISION.Sidebar.Status.Disconnected", css: "disconnected", face: "perturbed", data: {} };
+}
+
+/**
+ * The tab icon's expression: worried while connecting or waiting for dice,
+ * otherwise the plain mark.
+ * @param {{connected: boolean, sessionActive: boolean, waiting: boolean, dialogWaiting: boolean}} state
+ */
+export function tabFace(state) {
+  if (state.sessionActive && !state.connected) return "worried";
+  if (state.connected && (state.waiting || state.dialogWaiting)) return "worried";
+  return "original";
 }
 
 /**
@@ -265,10 +284,12 @@ function renderPanel() {
   app.render().catch(err => console.error("[DiceVision] Sidebar panel re-render failed:", err));
 }
 
+const FACES = ["original", "worried", "confused", "perturbed", "grumpy", "startled"];
+
 /**
  * Tint the tab icon by connection state (connecting covers the first
- * connect and reconnects), and light its notification pip while DiceVision
- * waits for dice.
+ * connect and reconnects), give it the expression for the state, and light
+ * its notification pip while DiceVision waits for dice.
  */
 function updateTabButton(state) {
   const button = globalThis.document?.querySelector(`#sidebar-tabs [data-tab="${TAB_NAME}"]`);
@@ -283,6 +304,8 @@ function updateTabButton(state) {
   }
   button.classList.toggle("dicevision-connected", state.connected);
   button.classList.toggle("dicevision-connecting", state.sessionActive && !state.connected);
+  const face = tabFace(state);
+  for (const f of FACES) button.classList.toggle(`dicevision-face-${f}`, f === face);
   pip.classList.toggle("active", state.connected && (state.waiting || state.dialogWaiting));
 }
 
