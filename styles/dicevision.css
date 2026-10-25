@@ -110,3 +110,117 @@
   font-size: var(--font-size-13, 13px);
   color: var(--color-level-warning, #ee9b3a);
 }
+
+/* Owlbear face icon (design system: OwlbearFaces). A class where a Font
+   Awesome class would go: the face is drawn with a CSS mask on ::before, so
+   it takes the element's colour. The expression is a second class. */
+
+.dicevision-owlbear::before {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background: currentColor;
+  -webkit-mask: url("../assets/icons/owlbear-face-original.svg") center / contain no-repeat;
+  mask: url("../assets/icons/owlbear-face-original.svg") center / contain no-repeat;
+}
+
+.dicevision-owlbear.dicevision-face-worried::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-worried.svg");
+  mask-image: url("../assets/icons/owlbear-face-worried.svg");
+}
+
+.dicevision-owlbear.dicevision-face-confused::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-confused.svg");
+  mask-image: url("../assets/icons/owlbear-face-confused.svg");
+}
+
+.dicevision-owlbear.dicevision-face-perturbed::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-perturbed.svg");
+  mask-image: url("../assets/icons/owlbear-face-perturbed.svg");
+}
+
+.dicevision-owlbear.dicevision-face-grumpy::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-grumpy.svg");
+  mask-image: url("../assets/icons/owlbear-face-grumpy.svg");
+}
+
+.dicevision-owlbear.dicevision-face-startled::before {
+  -webkit-mask-image: url("../assets/icons/owlbear-face-startled.svg");
+  mask-image: url("../assets/icons/owlbear-face-startled.svg");
+}
+
+/* Sidebar tab (v13+) */
+
+#sidebar-tabs [data-tab="dicevision"].dicevision-connected {
+  color: var(--color-level-success, #4caf50);
+}
+
+/* Connecting, or reconnecting after a drop */
+#sidebar-tabs [data-tab="dicevision"].dicevision-connecting {
+  color: var(--color-level-warning, #ee9b3a);
+}
+
+.dicevision-panel {
+  gap: 8px;
+  padding: 8px;
+}
+
+.dicevision-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-cool-4, #3d3d44);
+  border-radius: 4px;
+  font-size: var(--font-size-13, 13px);
+}
+
+.dicevision-panel-status.connected { color: var(--color-level-success, #4caf50); }
+.dicevision-panel-status.connecting,
+.dicevision-panel-status.reconnecting { color: var(--color-level-warning, #ee9b3a); }
+/* ~20px: the worried and perturbed brows need more than 16px to read */
+.dicevision-panel-status i { font-size: 1.5em; }
+.dicevision-panel-status.connecting i,
+.dicevision-panel-status.reconnecting i { animation: dicevision-pulse 1.5s ease-in-out infinite; }
+
+.dicevision-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dicevision-panel-actions [data-dv="request"].dicevision-waiting {
+  color: #ffb84d;
+  animation: dicevision-pulse 1.2s ease-in-out infinite;
+}
+
+.dicevision-panel-actions [data-dv="continuous"][aria-pressed="true"] {
+  color: var(--color-text-emphatic, #fff);
+  background: var(--color-warm-2, #c9593f);
+}
+
+/* Labels above fields (core's .stacked); core's label line-height is the input height */
+.dicevision-panel .form-group.stacked {
+  gap: 2px;
+}
+
+.dicevision-panel .form-group.stacked > label {
+  line-height: normal;
+  font-size: var(--font-size-12, 12px);
+}
+
+.dicevision-panel .form-group .hint {
+  margin: 0;
+}
+
+.dicevision-panel input.dicevision-invalid {
+  border-color: var(--color-level-error, #ce0707);
+}
+
+.dicevision-panel-connect input[name="sessionCode"] {
+  font-family: var(--font-monospace, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

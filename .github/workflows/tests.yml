@@ -56,3 +56,7 @@ jobs:
           if unzip -l module.zip | grep -E ' (tests|scripts-dev|node_modules)/'; then
             echo "::error::dev files in the release zip"; exit 1
           fi
+          # build-zip.sh is an include list: make sure the icons the CSS masks reference are packed
+          for svg in $(grep -o 'assets/icons/[A-Za-z0-9_.-]*\.svg' styles/dicevision.css | sort -u); do
+            unzip -l module.zip | grep -q " $svg\$" || { echo "::error::$svg missing from the release zip"; exit 1; }
+          done

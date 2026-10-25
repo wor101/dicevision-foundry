@@ -1,0 +1,79 @@
+<div class="dicevision-panel flexcol">
+  <div class="dicevision-panel-status {{status.css}}" data-dv-status="{{status.css}}">
+    <i class="dicevision-owlbear dicevision-face-{{status.face}}" inert></i>
+    <span>{{status.text}}</span>
+  </div>
+
+  {{#if sessionActive}}
+  <div class="dicevision-panel-actions">
+    <button type="button" data-action="requestRoll" data-dv="request"
+            class="{{#if waiting}}dicevision-waiting{{/if}}" aria-pressed="{{waiting}}"
+            data-tooltip aria-label="{{rollTooltip}}" {{#if rollDisabled}}disabled{{/if}}>
+      <i class="fa-solid fa-dice-d20" inert></i> {{localize "DICEVISION.Sidebar.Roll.Label"}}
+    </button>
+    <button type="button" data-action="toggleContinuous" data-dv="continuous"
+            aria-pressed="{{settings.continuous}}" data-tooltip
+            aria-label="{{localize 'DICEVISION.Settings.Continuous.Hint'}}" {{#if continuousDisabled}}disabled{{/if}}>
+      <i class="fa-solid fa-repeat" inert></i> {{localize "DICEVISION.Sidebar.Continuous"}}
+    </button>
+    <button type="button" data-action="disconnect" data-dv="disconnect">
+      <i class="fa-solid fa-plug-circle-xmark" inert></i> {{localize "DICEVISION.Sidebar.Disconnect"}}
+    </button>
+  </div>
+
+  <h4 class="divider">{{localize "DICEVISION.Sidebar.Settings"}}</h4>
+  <form class="standard-form dicevision-panel-settings" autocomplete="off">
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-mode" data-tooltip aria-label="{{localize 'DICEVISION.Settings.Mode.Hint'}}">{{localize "DICEVISION.Settings.Mode.Name"}}</label>
+      <div class="form-fields">
+        <select name="mode" id="{{idPrefix}}-mode">
+          {{selectOptions modeChoices selected=settings.mode localize=true}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-chatVisibility" data-tooltip aria-label="{{localize 'DICEVISION.Settings.ChatVisibility.Hint'}}">{{localize "DICEVISION.Settings.ChatVisibility.Name"}}</label>
+      <div class="form-fields">
+        <select name="chatVisibility" id="{{idPrefix}}-chatVisibility">
+          {{selectOptions chatVisibilityChoices selected=settings.chatVisibility localize=true}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-rollLabel" data-tooltip aria-label="{{localize 'DICEVISION.Settings.RollLabel.Hint'}}">{{localize "DICEVISION.Settings.RollLabel.Name"}}</label>
+      <div class="form-fields">
+        <input type="text" name="rollLabel" id="{{idPrefix}}-rollLabel" value="{{settings.rollLabel}}">
+      </div>
+    </div>
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-autoConnect" data-tooltip aria-label="{{localize 'DICEVISION.Settings.AutoConnect.Hint'}}">{{localize "DICEVISION.Settings.AutoConnect.Name"}}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="autoConnect" id="{{idPrefix}}-autoConnect" {{#if settings.autoConnect}}checked{{/if}}>
+      </div>
+    </div>
+    {{#if isGM}}
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-diceSoNice" data-tooltip aria-label="{{localize 'DICEVISION.Settings.DiceSoNice.Hint'}}">{{localize "DICEVISION.Settings.DiceSoNice.Name"}}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="diceSoNice" id="{{idPrefix}}-diceSoNice" {{#if settings.diceSoNice}}checked{{/if}}>
+      </div>
+    </div>
+    {{/if}}
+  </form>
+  {{else}}
+  <form class="standard-form dicevision-panel-connect" autocomplete="off">
+    <div class="form-group stacked">
+      <label for="{{idPrefix}}-sessionCode">{{localize "DICEVISION.Settings.SessionCode.Name"}}</label>
+      <div class="form-fields">
+        {{!-- maxlength 9: a pasted XKRM-4N7B still fits --}}
+        <input type="text" name="sessionCode" id="{{idPrefix}}-sessionCode" value="{{sessionCodeInput}}"
+               placeholder="XKRM4N7B" maxlength="9" spellcheck="false" autocapitalize="characters">
+      </div>
+      <p class="hint">{{localize "DICEVISION.Sidebar.ConnectHint"}}</p>
+    </div>
+    <button type="submit" data-dv="connect">
+      <i class="fa-solid fa-plug" inert></i> {{localize "DICEVISION.Sidebar.Connect"}}
+    </button>
+  </form>
+  {{/if}}
+</div>

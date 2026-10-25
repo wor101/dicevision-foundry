@@ -8,6 +8,7 @@
 import { registerSettings } from "./settings.js";
 import { diceVisionClient } from "./dicevision-client.js";
 import { registerChatControls } from "./chat-controls.js";
+import { registerSidebarTab } from "./sidebar-tab.js";
 import { registerRollIntercept, diceConfigUsesDiceVision } from "./roll-intercept.js";
 import { registerDiceSoNice } from "./dice-so-nice.js";
 
@@ -24,6 +25,12 @@ Hooks.once("init", () => {
   registerChatControls(diceVisionClient);
   registerRollIntercept(diceVisionClient);
   registerDiceSoNice();
+  // Last, and isolated: a failure here must not take Replace mode down with it
+  try {
+    registerSidebarTab(diceVisionClient);
+  } catch (err) {
+    console.error("[DiceVision] Sidebar tab not registered; use Game Settings or /dv connect:", err);
+  }
 
   // Expose public API on the module for macros and console access
   const module = game.modules.get(MODULE_ID);

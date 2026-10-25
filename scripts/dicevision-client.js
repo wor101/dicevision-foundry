@@ -68,7 +68,7 @@ export class DiceVisionClient {
 
   /**
    * Connect to the DiceVision bridge WebSocket.
-   * @param {string} sessionCode - 8-character session code (dash optional, e.g. "XKRM-4N7B")
+   * @param {string} sessionCode - 8-character session code, e.g. "XKRM4N7B". Case and hyphens are ignored ("xkrm-4n7b" connects to XKRM4N7B); the code isn't otherwise validated
    */
   connect(sessionCode) {
     this.disconnect();
@@ -127,6 +127,7 @@ export class DiceVisionClient {
           );
           this._warnReplaceDigital();
           this.sessionCode = null;
+          this.reconnectAttempts = 0;
           this.pendingChatRoll = false;
           this._notifyState();
           return;
@@ -294,8 +295,10 @@ export class DiceVisionClient {
 
   /**
    * @returns {{connected: boolean, sessionActive: boolean, sessionCode: string|null,
+   *   reconnectAttempt: number, reconnectMax: number,
    *   mode: string, continuous: boolean, waiting: boolean, dialogWaiting: boolean}}
    *   sessionActive: connected, connecting, or waiting to reconnect
+   *   reconnectAttempt: the current retry (1-based) while reconnecting (sessionActive), else 0
    *   waiting: a chat roll is wanted (dice button, /dv roll, continuous)
    *   dialogWaiting: a Foundry roll dialog is waiting for physical dice
    */
@@ -304,6 +307,8 @@ export class DiceVisionClient {
       connected: this.isConnected(),
       sessionActive: !!this.ws || !!this.reconnectTimeout,
       sessionCode: this.sessionCode,
+      reconnectAttempt: this.reconnectAttempts,
+      reconnectMax: MAX_RECONNECT_ATTEMPTS,
       mode: game.settings.get(MODULE_ID, "mode"),
       continuous: game.settings.get(MODULE_ID, "continuous"),
       waiting: this.isConnected() && this._wantsChatRoll(),
@@ -311,7 +316,10 @@ export class DiceVisionClient {
     };
   }
 
-  /** Tell the UI (chat controls) that connection or waiting state changed. */
+  /**
+   * Fire dicevision.stateChanged with getState(): chat controls, the sidebar
+   * tab, and Replace mode's default fulfillment method listen.
+   */
   _notifyState() {
     Hooks.callAll("dicevision.stateChanged", this.getState());
   }
@@ -540,6 +548,7 @@ export class DiceVisionClient {
       );
       this._warnReplaceDigital();
       this.pendingChatRoll = false;
+      this.reconnectAttempts = 0;
       return;
     }
 

@@ -142,6 +142,8 @@ const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
 const chatControls = await import("../scripts/chat-controls.js");
 const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
+const { panelStatus, formatCode, registerSidebarTab, tabFace, FACES } = await import("../scripts/sidebar-tab.js");
+const { readFileSync, existsSync } = await import("node:fs");
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -857,11 +859,11 @@ await test("/dv connect saves a new code and connects", async (c) => {
   // settings.js's onChange connects; the hook stands in for it
   chatLine("/dv connect abcd-2345");
   await flush();
-  check(settings.sessionCode === "abcd-2345", "setting saved");
+  check(settings.sessionCode === "ABCD2345", `setting saved without the hyphen (${settings.sessionCode})`);
   check(sockets.at(-1)?.url.endsWith("/ABCD2345"), `socket ${sockets.at(-1)?.url}`);
 });
 
-await test("/dv connect with the saved code reconnects anyway", async (c) => {
+await test("/dv connect with a saved hyphenated code rewrites it and connects once", async (c) => {
   registerChatControls(c);
   settings.sessionCode = "XKRM-4N7B";
   connectConfirmed(c);
@@ -869,9 +871,10 @@ await test("/dv connect with the saved code reconnects anyway", async (c) => {
   await flush();
   check(!c.isConnected(), "disconnected");
   const before = sockets.length;
-  chatLine("/dv connect xkrm4n7b"); // same code, different spelling
+  chatLine("/dv connect xkrm4n7b"); // saved in the old spelling: rewritten, then connected via onChange
   await flush();
-  check(sockets.length === before + 1 && sockets.at(-1).url.endsWith("/XKRM4N7B"), "new socket opened");
+  check(settings.sessionCode === "XKRM4N7B", `saved code rewritten without the hyphen (${settings.sessionCode})`);
+  check(sockets.length === before + 1 && sockets.at(-1).url.endsWith("/XKRM4N7B"), "exactly one socket opened");
 });
 
 await test("/dv connect rejects a malformed code or missing argument", async (c) => {
@@ -2677,6 +2680,183 @@ await interceptTest("replace: a roll with no dice list shows EmptyRoll and keeps
   await flush();
   check(app.notice() === "DICEVISION.Fulfillment.EmptyRoll", `notice ${app.notice()}`);
   check(JSON.stringify(ws.sentTypes()) === '["waiting"]', `re-armed ${JSON.stringify(ws.sentTypes())}`);
+});
+
+// ---------------------------------------------------------------------------
+// Sidebar panel (pure parts; the tab itself needs Foundry's ApplicationV2)
+// ---------------------------------------------------------------------------
+
+await test("sidebar: formatCode shows the code as DiceVision does (no hyphen)", () => {
+  check(formatCode("XKRM4N7B") === "XKRM4N7B", "plain code is unchanged");
+  check(formatCode("xkrm-4n7b") === "XKRM4N7B", "lower-case hyphenated code is normalized");
+  check(formatCode(null) === "" && formatCode("") === "", "no code is empty");
+  check(formatCode("abc") === "ABC", "a short code is only upper-cased");
+});
+
+await test("sidebar: panelStatus follows the client state", (c) => {
+  const status = () => panelStatus(c.getState());
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected at first");
+  check(status().face === "perturbed", "disconnected: perturbed face");
+
+  settings.continuous = false;
+  c.connect("XKRM-4N7B");
+  let s = status();
+  check(s.face === "worried", "connecting: worried face");
+  check(s.key === "DICEVISION.Sidebar.Status.Connecting" && s.data.code === "XKRM4N7B", `connecting while the socket opens (code ${s.data.code}): ${s.key}`);
+
+  sockets[0].open();
+  sockets[0].confirm();
+  s = status();
+  check(s.key === "DICEVISION.Sidebar.Status.Connected" && s.css === "connected", `connected: ${s.key}`);
+  check(s.face === "original", "connected: original face");
+
+  sockets[0].serverClose(1006);
+  s = status();
+  check(s.key === "DICEVISION.Sidebar.Status.Reconnecting" && s.data.attempt === 1 && s.data.max === 5,
+    `reconnecting after a drop: ${JSON.stringify(s)}`);
+  check(s.face === "worried", "reconnecting: worried face");
+
+  // The retry opens a new socket: still reconnecting until the server confirms
+  runTimers();
+  check(status().key === "DICEVISION.Sidebar.Status.Reconnecting" && sockets.length === 2, "still reconnecting while the retry socket opens");
+  sockets[1].open();
+  sockets[1].confirm();
+  check(status().key === "DICEVISION.Sidebar.Status.Connected" && c.getState().reconnectAttempt === 0, "connected again, counter reset");
+
+  // Five failed retries: Disconnected, not a stale "Reconnecting (5/5)"
+  for (let i = 0; i < 6; i++) {
+    sockets.at(-1).serverClose(1006);
+    runTimers();
+  }
+  check(!c.getState().sessionActive && c.getState().reconnectAttempt === 0, "gave up: session inactive, counter reset");
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "gave up: Disconnected");
+  check(status().face === "perturbed", "gave up: perturbed face");
+
+  c.disconnect();
+  check(status().key === "DICEVISION.Sidebar.Status.Disconnected", "disconnected after disconnect()");
+});
+
+await test("sidebar: tabFace follows the client state (unlike the panel, disconnected is the plain mark)", (c) => {
+  const face = () => tabFace(c.getState());
+  settings.continuous = false;
+  check(face() === "original", "disconnected at first: original");
+
+  c.connect("XKRM4N7B");
+  check(face() === "worried", "connecting: worried");
+  sockets[0].open();
+  sockets[0].confirm();
+  check(face() === "original", "connected, idle: original");
+
+  c.requestRoll();
+  check(face() === "worried", "dice-button request pending: worried");
+  c.cancelRequest();
+  check(face() === "original", "request cancelled: original");
+
+  const consumer = fakeConsumer(c, 1);
+  check(face() === "worried", "roll dialog waiting: worried");
+  consumer.remove();
+  check(face() === "original", "dialog closed: original");
+
+  settings.continuous = true;
+  Hooks.callAll("dicevision.continuousChanged", true);
+  check(face() === "worried", "continuous mode: worried all the time");
+  settings.continuous = false;
+  Hooks.callAll("dicevision.continuousChanged", false);
+
+  sockets[0].serverClose(1006);
+  check(face() === "worried", "reconnect pending: worried");
+  runTimers();
+  check(face() === "worried", "retry socket opening: worried");
+  // Four more drops reach the fifth attempt; the next gives up (a real socket closes once)
+  for (let i = 0; i < 5; i++) {
+    sockets.at(-1).serverClose(1006);
+    runTimers();
+  }
+  check(!c.getState().sessionActive && face() === "original", "gave up: original, not perturbed");
+  c.disconnect();
+  check(face() === "original", "after disconnect(): original");
+});
+
+await test("sidebar: every face has a shipped SVG and a CSS rule, and the pure functions stay within FACES", () => {
+  const root = new URL("..", import.meta.url).pathname;
+  const css = readFileSync(`${root}styles/dicevision.css`, "utf8");
+  for (const face of FACES) {
+    const svg = `${root}assets/icons/owlbear-face-${face}.svg`;
+    check(existsSync(svg), `${face}: SVG shipped`);
+    const text = existsSync(svg) ? readFileSync(svg, "utf8") : "";
+    check(/^<svg [^>]*viewBox="0 0 24 24"/.test(text) && text.trimEnd().endsWith("</svg>") && !/<(image|script|style)|href=/.test(text),
+      `${face}: single self-contained 24x24 SVG`);
+    const rule = face === "original" ? ".dicevision-owlbear::before" : `.dicevision-owlbear.dicevision-face-${face}::before`;
+    check(css.includes(rule) && css.includes(`owlbear-face-${face}.svg`), `${face}: CSS rule masks its SVG`);
+  }
+  for (const url of css.match(/assets\/icons\/[\w.-]+\.svg/g) ?? []) {
+    check(existsSync(`${root}${url}`), `CSS url ${url} exists`);
+  }
+  // Every face the pure functions can return is one of FACES
+  const base = { connected: false, sessionActive: false, waiting: false, dialogWaiting: false, reconnectAttempt: 0, reconnectMax: 5 };
+  const states = [
+    base,
+    { ...base, sessionActive: true },
+    { ...base, sessionActive: true, reconnectAttempt: 2 },
+    { ...base, sessionActive: true, connected: true },
+    { ...base, sessionActive: true, connected: true, waiting: true },
+    { ...base, sessionActive: true, connected: true, dialogWaiting: true }
+  ];
+  for (const state of states) {
+    check(FACES.includes(tabFace(state)) && FACES.includes(panelStatus(state).face), `faces within FACES for ${JSON.stringify(state)}`);
+  }
+});
+
+await test("sidebar: an invalid session mid-retry resets the counter", (c) => {
+  settings.continuous = false;
+  connectConfirmed(c);
+  sockets[0].serverClose(1006);
+  runTimers();
+  sockets[1].serverClose(4001);
+  check(!c.getState().sessionActive && c.getState().reconnectAttempt === 0, "4001: session inactive, counter reset");
+  check(panelStatus(c.getState()).key === "DICEVISION.Sidebar.Status.Disconnected", "4001: Disconnected");
+});
+
+await test("sidebar: registerSidebarTab returns false without the v13 API and touches nothing", (c) => {
+  // The harness has no CONFIG.ui or foundry.applications, like Foundry v12
+  const before = Object.keys(hooks).length;
+  let result;
+  try {
+    result = registerSidebarTab(c);
+  } catch (err) {
+    result = err;
+  }
+  check(result === false, `returns false, no throw: ${result}`);
+  check(Object.keys(hooks).length === before, "registers no hooks");
+  check(!(globalThis.CONFIG?.ui), "leaves CONFIG.ui alone");
+});
+
+await test("sidebar: connectWithCode saves a new code and reconnects a saved one", async (c) => {
+  const { connectWithCode } = chatControls;
+  settings.sessionCode = "";
+  check((await connectWithCode(c, "nope")) === false && sockets.length === 0, "invalid code: rejected, nothing opened");
+  check((await connectWithCode(c, "xkrm-4n7b")) === true, "valid code accepted");
+  check(settings.sessionCode === "XKRM4N7B" && sockets.length === 1, `new code saved without the hyphen (${settings.sessionCode}) and connected via onChange`);
+  check((await connectWithCode(c, "XKRM4N7B")) === true && sockets.length === 2, "same code: reconnects directly");
+  check((await connectWithCode(c, "xkrm-4n7b")) === true && sockets.length === 3, "same code with a hyphen: reconnects directly, nothing re-saved");
+
+  // Game Settings saves the code as typed: a lower-case or hyphenated saved code is rewritten
+  settings.sessionCode = "xkrm4n7b";
+  check((await connectWithCode(c, "XKRM4N7B")) === true && settings.sessionCode === "XKRM4N7B" && sockets.length === 4,
+    `lower-case saved code is re-saved upper-case (${settings.sessionCode}), one socket`);
+
+  // The onChange hook failing to connect (Foundry only logs hook errors) is reported
+  settings.sessionCode = "";
+  c.disconnect();
+  globalThis.WebSocket = class { constructor() { throw new Error("no sockets"); } };
+  let error;
+  try {
+    await connectWithCode(c, "ABCD-2345");
+  } catch (err) {
+    error = err;
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  check(error instanceof Error && !c.getState().sessionActive, `throws when no connection started: ${error?.message}`);
 });
 
 console.info(`\n${passes} checks passed, ${failures} failed`);
