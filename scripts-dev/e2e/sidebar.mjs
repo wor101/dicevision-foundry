@@ -24,7 +24,7 @@ const check = (cond, msg) => {
 
 const TAB = '#sidebar-tabs [data-tab="dicevision"]';
 const PANEL = '#dicevision.sidebar-tab';
-const dashed = `${code.replace(/-/g, '').toUpperCase().slice(0, 4)}-${code.replace(/-/g, '').toUpperCase().slice(4)}`;
+const plain = code.replace(/-/g, '').toUpperCase(); // how the module shows and saves it
 
 const browser = await launchBrowser();
 try {
@@ -67,8 +67,8 @@ try {
   await page.waitForFunction(() => game.modules.get('dicevision').api.isConnected(), null, { timeout: 15000 });
   await page.waitForSelector(`${PANEL} form.dicevision-panel-settings`, { timeout: 5000 });
   const connected = await status();
-  check(connected.css === 'connected' && connected.text.includes(dashed), `connected: status "${connected.text}"`);
-  check((await page.evaluate(() => game.settings.get('dicevision', 'sessionCode'))).toLowerCase() === code.toLowerCase(), 'session code saved');
+  check(connected.css === 'connected' && connected.text.includes(plain) && !connected.text.includes('-'), `connected: status "${connected.text}"`);
+  check((await page.evaluate(() => game.settings.get('dicevision', 'sessionCode'))) === plain, 'session code saved without a hyphen');
   check(await page.$eval(TAB, el => el.classList.contains('dicevision-connected')), 'tab icon tinted while connected');
 
   // Settings save through game.settings (mode has an onChange hook, rollLabel doesn't)
@@ -117,7 +117,7 @@ try {
   await page.click(`${PANEL} [data-dv="disconnect"]`);
   await page.waitForSelector(`${PANEL} form.dicevision-panel-connect`, { timeout: 5000 });
   check(!(await api()).sessionActive, 'Disconnect: session closed');
-  check((await page.$eval(`${PANEL} input[name="sessionCode"]`, el => el.value)) === dashed, 'Disconnect: code kept in the field');
+  check((await page.$eval(`${PANEL} input[name="sessionCode"]`, el => el.value)) === plain, 'Disconnect: code kept in the field');
   check(!(await page.$eval(TAB, el => el.classList.contains('dicevision-connected'))), 'tab icon no longer tinted');
 
   const errs = errors(page);

@@ -25,13 +25,14 @@ const TEMPLATE = `modules/${MODULE_ID}/templates/sidebar-tab.hbs`;
 const PANEL_SETTINGS = ["mode", "chatVisibility", "rollLabel", "autoConnect"];
 
 /**
- * "XKRM4N7B" → "XKRM-4N7B", the display format.
+ * "xkrm-4n7b" → "XKRM4N7B": the code as DiceVision shows it (upper case,
+ * hyphens dropped). The client's sessionCode is already in this form; the
+ * saved setting may not be, since Game Settings stores it as typed.
  * @param {string|null} code
  */
 export function formatCode(code) {
   if (!code) return "";
-  const plain = String(code).toUpperCase().replace(/-/g, "");
-  return plain.length === 8 ? `${plain.slice(0, 4)}-${plain.slice(4)}` : plain;
+  return String(code).toUpperCase().replace(/-/g, "");
 }
 
 /**
