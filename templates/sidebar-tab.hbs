@@ -65,8 +65,9 @@
     <div class="form-group stacked">
       <label for="{{idPrefix}}-sessionCode">{{localize "DICEVISION.Settings.SessionCode.Name"}}</label>
       <div class="form-fields">
+        {{!-- maxlength 9: a pasted XKRM-4N7B still fits --}}
         <input type="text" name="sessionCode" id="{{idPrefix}}-sessionCode" value="{{sessionCodeInput}}"
-               placeholder="XKRM-4N7B" maxlength="9" spellcheck="false" autocapitalize="characters">
+               placeholder="XKRM4N7B" maxlength="9" spellcheck="false" autocapitalize="characters">
       </div>
       <p class="hint">{{localize "DICEVISION.Sidebar.ConnectHint"}}</p>
     </div>

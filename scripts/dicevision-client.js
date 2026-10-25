@@ -68,7 +68,7 @@ export class DiceVisionClient {
 
   /**
    * Connect to the DiceVision bridge WebSocket.
-   * @param {string} sessionCode - 8-character session code (dash optional, e.g. "XKRM-4N7B")
+   * @param {string} sessionCode - 8-character session code, e.g. "XKRM4N7B". Case and hyphens are ignored ("xkrm-4n7b" connects to XKRM4N7B); the code isn't otherwise validated
    */
   connect(sessionCode) {
     this.disconnect();

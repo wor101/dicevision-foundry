@@ -858,11 +858,11 @@ await test("/dv connect saves a new code and connects", async (c) => {
   // settings.js's onChange connects; the hook stands in for it
   chatLine("/dv connect abcd-2345");
   await flush();
-  check(settings.sessionCode === "abcd-2345", "setting saved");
+  check(settings.sessionCode === "ABCD2345", `setting saved without the hyphen (${settings.sessionCode})`);
   check(sockets.at(-1)?.url.endsWith("/ABCD2345"), `socket ${sockets.at(-1)?.url}`);
 });
 
-await test("/dv connect with the saved code reconnects anyway", async (c) => {
+await test("/dv connect with a saved hyphenated code rewrites it and connects once", async (c) => {
   registerChatControls(c);
   settings.sessionCode = "XKRM-4N7B";
   connectConfirmed(c);
@@ -870,9 +870,10 @@ await test("/dv connect with the saved code reconnects anyway", async (c) => {
   await flush();
   check(!c.isConnected(), "disconnected");
   const before = sockets.length;
-  chatLine("/dv connect xkrm4n7b"); // same code, different spelling
+  chatLine("/dv connect xkrm4n7b"); // saved in the old spelling: rewritten, then connected via onChange
   await flush();
-  check(sockets.length === before + 1 && sockets.at(-1).url.endsWith("/XKRM4N7B"), "new socket opened");
+  check(settings.sessionCode === "XKRM4N7B", `saved code rewritten without the hyphen (${settings.sessionCode})`);
+  check(sockets.length === before + 1 && sockets.at(-1).url.endsWith("/XKRM4N7B"), "exactly one socket opened");
 });
 
 await test("/dv connect rejects a malformed code or missing argument", async (c) => {
@@ -2684,11 +2685,11 @@ await interceptTest("replace: a roll with no dice list shows EmptyRoll and keeps
 // Sidebar panel (pure parts; the tab itself needs Foundry's ApplicationV2)
 // ---------------------------------------------------------------------------
 
-await test("sidebar: formatCode shows the dashed display format", () => {
-  check(formatCode("XKRM4N7B") === "XKRM-4N7B", "plain code gets a dash");
-  check(formatCode("xkrm-4n7b") === "XKRM-4N7B", "lower-case dashed code is normalized");
+await test("sidebar: formatCode shows the code as DiceVision does (no hyphen)", () => {
+  check(formatCode("XKRM4N7B") === "XKRM4N7B", "plain code is unchanged");
+  check(formatCode("xkrm-4n7b") === "XKRM4N7B", "lower-case hyphenated code is normalized");
   check(formatCode(null) === "" && formatCode("") === "", "no code is empty");
-  check(formatCode("ABC") === "ABC", "a short code is left alone");
+  check(formatCode("abc") === "ABC", "a short code is only upper-cased");
 });
 
 await test("sidebar: panelStatus follows the client state", (c) => {
@@ -2698,7 +2699,7 @@ await test("sidebar: panelStatus follows the client state", (c) => {
   settings.continuous = false;
   c.connect("XKRM-4N7B");
   let s = status();
-  check(s.key === "DICEVISION.Sidebar.Status.Connecting" && s.data.code === "XKRM-4N7B", `connecting while the socket opens: ${s.key}`);
+  check(s.key === "DICEVISION.Sidebar.Status.Connecting" && s.data.code === "XKRM4N7B", `connecting while the socket opens (code ${s.data.code}): ${s.key}`);
 
   sockets[0].open();
   sockets[0].confirm();
@@ -2758,8 +2759,14 @@ await test("sidebar: connectWithCode saves a new code and reconnects a saved one
   settings.sessionCode = "";
   check((await connectWithCode(c, "nope")) === false && sockets.length === 0, "invalid code: rejected, nothing opened");
   check((await connectWithCode(c, "xkrm-4n7b")) === true, "valid code accepted");
-  check(settings.sessionCode === "xkrm-4n7b" && sockets.length === 1, "new code saved and connected via onChange");
+  check(settings.sessionCode === "XKRM4N7B" && sockets.length === 1, `new code saved without the hyphen (${settings.sessionCode}) and connected via onChange`);
   check((await connectWithCode(c, "XKRM4N7B")) === true && sockets.length === 2, "same code: reconnects directly");
+  check((await connectWithCode(c, "xkrm-4n7b")) === true && sockets.length === 3, "same code with a hyphen: reconnects directly, nothing re-saved");
+
+  // Game Settings saves the code as typed: a lower-case or hyphenated saved code is rewritten
+  settings.sessionCode = "xkrm4n7b";
+  check((await connectWithCode(c, "XKRM4N7B")) === true && settings.sessionCode === "XKRM4N7B" && sockets.length === 4,
+    `lower-case saved code is re-saved upper-case (${settings.sessionCode}), one socket`);
 
   // The onChange hook failing to connect (Foundry only logs hook errors) is reported
   settings.sessionCode = "";

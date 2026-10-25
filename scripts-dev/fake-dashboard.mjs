@@ -3,7 +3,7 @@
 // "waiting" requests with scripted rolls, so the module can be tested without
 // a camera or physical dice.
 //
-//   node scripts-dev/fake-dashboard.mjs XKRM-4N7B --dice 1d20,2d6 --max 3
+//   node scripts-dev/fake-dashboard.mjs XKRM4N7B --dice 1d20,2d6 --max 3
 //
 // Options:
 //   --dice SPEC   Dice to "roll", e.g. 1d20 or 1d20,2d6 (default 1d20).

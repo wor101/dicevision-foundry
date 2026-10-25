@@ -25,7 +25,7 @@ To install a specific pre-release, use its tag's URL instead, e.g. `https://gith
 ## Setup
 
 1. Go to [dicevision.dirtyowlbear.com](https://dicevision.dirtyowlbear.com) and create a session in **Settings**
-2. Copy the 8-character session code (e.g., `XKRM-4N7B` — the dash is optional)
+2. Copy the 8-character session code (e.g., `XKRM4N7B`; a hyphen after the 4th character, `XKRM-4N7B`, is accepted too)
 3. In Foundry, click the camera tab in the sidebar (just above Settings), paste the session code and click **Connect**. On Foundry v12, use **Settings** → **Module Settings** → **DiceVision** instead, or `/dv connect <code>` in chat
 4. Once connected, the same panel shows DiceVision's settings. Set **Operating Mode** to **Replace** (or **Chat**, below)
 5. Roll in Foundry as usual, e.g. `/roll 1d20+5` or an attack from a character sheet. A dialog opens and waits; roll the physical dice in front of your camera and Foundry uses them.
@@ -124,7 +124,7 @@ The module exposes a public API for macros and console use:
 ```javascript
 const api = game.modules.get("dicevision").api;
 
-api.connect("XKRM-4N7B");  // Connect to a session
+api.connect("XKRM4N7B");  // Connect to a session
 api.disconnect();       // Disconnect
 api.isConnected();      // Check connection status
 api.requestRoll();      // Post the next physical roll to chat (Chat or Replace mode)

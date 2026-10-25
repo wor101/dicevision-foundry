@@ -1,6 +1,6 @@
 {
   "DICEVISION.Settings.SessionCode.Name": "Session Code",
-  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM-4N7B). Create one at dicevision.dirtyowlbear.com. The camera tab in the sidebar connects too.",
+  "DICEVISION.Settings.SessionCode.Hint": "8-character code from DiceVision Settings (e.g. XKRM4N7B). Create one at dicevision.dirtyowlbear.com. The camera tab in the sidebar connects too.",
 
   "DICEVISION.Settings.Mode.Name": "Operating Mode",
   "DICEVISION.Settings.Mode.Hint": "How recognized dice rolls are handled in Foundry. Replace: every roll (/roll, character sheets) waits for your physical dice while connected; Core \u203a Dice Configuration can still set individual die types (or its Default) to another method.",
@@ -60,7 +60,7 @@
   "DICEVISION.Sidebar.Status.Reconnecting": "Reconnecting to {code} ({attempt}/{max})\u2026",
   "DICEVISION.Sidebar.Status.Disconnected": "Not connected",
   "DICEVISION.Sidebar.Connect": "Connect",
-  "DICEVISION.Sidebar.ConnectHint": "From DiceVision Settings at dicevision.dirtyowlbear.com. The dash is optional.",
+  "DICEVISION.Sidebar.ConnectHint": "From DiceVision Settings at dicevision.dirtyowlbear.com. Upper or lower case, with or without a hyphen.",
   "DICEVISION.Sidebar.Disconnect": "Disconnect",
   "DICEVISION.Sidebar.Roll.Label": "Roll physical dice",
   "DICEVISION.Sidebar.Roll.ModeOff": "DiceVision: Mode is Off. Set it to Chat or Replace below.",
@@ -69,7 +69,7 @@
 
   "DICEVISION.Commands.Help": "<b>DiceVision commands</b><br>/dv roll \u2014 post your next physical roll<br>/dv cancel \u2014 cancel a pending roll<br>/dv continuous [on|off] \u2014 post every roll<br>/dv mode off|chat|replace<br>/dv connect &lt;code&gt;<br>/dv disconnect<br>/dv status",
   "DICEVISION.Commands.NothingToCancel": "DiceVision: no roll request to cancel.",
-  "DICEVISION.Commands.InvalidCode": "DiceVision: \"{code}\" isn't a session code. Codes are 8 letters or digits, e.g. XKRM-4N7B.",
+  "DICEVISION.Commands.InvalidCode": "DiceVision: \"{code}\" isn't a session code. Codes are 8 letters or digits, e.g. XKRM4N7B.",
   "DICEVISION.Commands.ModeSet": "DiceVision mode: {mode}",
   "DICEVISION.Commands.Status": "<b>DiceVision</b>: {connection}<br>Session: {session}<br>Mode: {mode}<br>Continuous: {continuous}<br>Chat roll requested: {waiting}<br>Roll dialog waiting: {dialog}",
   "DICEVISION.Commands.AlreadyDisconnected": "DiceVision: not connected.",

@@ -147,8 +147,8 @@ Source of truth: `backend/app/routers/bridge.py` in `wor101/dice-vision`.
 
 - **Length**: 8 characters
 - **Character set**: `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (excludes ambiguous 0/O/1/I/L)
-- **Display format**: `XKRM-4N7B` (dash after 4th character for readability)
-- **Normalization**: Uppercase, strip dashes before use (e.g., `xkrm-4n7b` → `XKRM4N7B`)
+- **Display format**: `XKRM4N7B`, as DiceVision shows it (no hyphen; see wor101/dicevision-foundry#18)
+- **Normalization**: upper-case and strip hyphens before use (`xkrm-4n7b` → `XKRM4N7B`; `_openSocket`, `formatCode`). Typed codes (`/dv connect`, the panel) must match `SESSION_CODE_PATTERN`: 8 letters/digits with an optional hyphen after the 4th. `connectWithCode` saves the normalized form; Game Settings saves the code as typed (`settings.js` doesn't normalize), so the saved setting may be hyphenated or lower-case until the next `connectWithCode`, and the panel shows it through `formatCode`
 
 ### Messages Received (Server → Client)
 
@@ -241,7 +241,7 @@ A local Foundry server plus a fake dashboard lets you test against the live brid
 - [ ] Module loads with no console errors (v12, v13, v14)
 - [ ] Continuous off (no roll dialog open): no `waiting` until the dice button / `/dv roll`; one roll posted, then `cancel`
 - [ ] Continuous on: every roll posted, `waiting` re-sent after each
-- [ ] Connect with valid session code (with and without dash)
+- [ ] Connect with valid session code (with and without a hyphen)
 - [ ] Connect with invalid session code → "invalid session" error with dice-vision#407 deployed; before that, "Connection lost" after 5 retries. No "Connected" toast, no loop
 - [ ] Mode `off` → no chat posts and no buttons (per-die Dice Configuration dialogs still fill); mode `chat` → requested or continuous rolls appear in chat
 - [ ] `/dv` commands typed into the chat box (v14: rich-text editor)

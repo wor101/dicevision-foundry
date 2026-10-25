@@ -189,10 +189,11 @@ export function toggleRollRequest(client) {
 }
 
 /**
- * Save a session code (as typed) and connect to it (/dv connect, the sidebar
- * panel). A code matching the saved one (ignoring case and the dash)
- * reconnects without saving, because Foundry skips onChange for an
- * unchanged setting.
+ * Save a session code and connect to it (/dv connect, the sidebar panel).
+ * The code is saved as DiceVision shows it (upper case, no hyphen), so Game
+ * Settings and the panel agree even if the user typed xkrm-4n7b. A code
+ * already saved in that form reconnects without saving, because Foundry
+ * skips onChange for an unchanged setting.
  * @param {import("./dicevision-client.js").DiceVisionClient} client
  * @param {string} code
  * @returns {Promise<boolean>} false if the code isn't a session code
@@ -201,11 +202,14 @@ export function toggleRollRequest(client) {
  */
 export async function connectWithCode(client, code) {
   if (!SESSION_CODE_PATTERN.test(code)) return false;
-  const normalize = c => c.toUpperCase().replace(/-/g, "");
-  if (normalize(code) === normalize(game.settings.get(MODULE_ID, "sessionCode"))) {
-    client.connect(code);
+  const plain = code.toUpperCase().replace(/-/g, "");
+  if (plain === game.settings.get(MODULE_ID, "sessionCode")) {
+    client.connect(plain);
   } else {
-    await game.settings.set(MODULE_ID, "sessionCode", code);
+    // Saving connects via the setting's onChange. Game Settings itself saves
+    // the code as typed (settings.js doesn't normalize), so a hyphenated or
+    // lower-case saved code lands here too and is rewritten.
+    await game.settings.set(MODULE_ID, "sessionCode", plain);
     if (!client.getState().sessionActive) throw new Error("connection was not started (see the console)");
   }
   return true;
