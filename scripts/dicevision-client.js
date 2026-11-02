@@ -16,6 +16,13 @@ const WS_BASE_URL = "wss://dicevision.dirtyowlbear.com/api/bridge";
 const PING_INTERVAL_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 30000];
+/**
+ * After giving up, keep trying quietly this often: the bridge may take a while
+ * to come back (a server restart), and the dashboard reconnects on its own, so
+ * this end must too. Returning to the tab or the network coming back tries at
+ * once (a hidden tab's timers are throttled).
+ */
+export const BACKGROUND_RETRY_MS = 30000;
 const INVALID_SESSION_CLOSE_CODE = 4001;
 
 export class DiceVisionClient {
@@ -26,6 +33,11 @@ export class DiceVisionClient {
     this.pingInterval = null;
     this.reconnectTimeout = null;
     this.reconnectAttempts = 0;
+    // After giving up: the quiet retry's timer, and whether a retry is in hand
+    // (waiting on the timer or on a socket it opened). The session reads as not
+    // connected throughout (getState().sessionActive false), as before.
+    this.backgroundRetryTimeout = null;
+    this.backgroundRetry = false;
     // Roll dialogs waiting for physical dice (see roll-intercept.js)
     this.rollConsumers = new Set();
     // A one-off chat roll requested via requestRoll() (continuous mode off)
@@ -39,6 +51,28 @@ export class DiceVisionClient {
     // Server error messages already shown, so a repeat doesn't toast again
     this.shownErrors = new Set();
     this._setupHooks();
+    this._setupWakeListeners();
+  }
+
+  /** Back to the tab, or back online: if we gave up, try now rather than wait for the (throttled) retry timer. */
+  _setupWakeListeners() {
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    const tryNow = () => {
+      if (document.visibilityState !== "visible") return;
+      this.retryNow();
+    };
+    document.addEventListener("visibilitychange", tryNow);
+    window.addEventListener("online", tryNow);
+  }
+
+  /** While retrying in the background with no attempt in flight, attempt now. @returns {boolean} whether it tried */
+  retryNow() {
+    if (!this.backgroundRetry || this.ws || !this.sessionCode) return false;
+    clearTimeout(this.backgroundRetryTimeout);
+    this.backgroundRetryTimeout = null;
+    console.log("[DiceVision] Tab visible or network back: retrying now");
+    this._openSocket(this.sessionCode);
+    return true;
   }
 
   /** Listen for setting changes to auto-reconnect/disconnect. */
@@ -128,11 +162,16 @@ export class DiceVisionClient {
           this._warnReplaceDigital();
           this.sessionCode = null;
           this.reconnectAttempts = 0;
+          this._stopBackgroundRetry();
           this.pendingChatRoll = false;
           this._notifyState();
           return;
         }
 
+        if (this.backgroundRetry) {
+          this._scheduleBackgroundRetry();
+          return;
+        }
         this._attemptReconnect();
         this._notifyState();
       };
@@ -149,6 +188,8 @@ export class DiceVisionClient {
       this._warnReplaceDigital();
       this.ws = null;
       this.sessionCode = null;
+      // A background attempt that throws has no code left to retry
+      this._stopBackgroundRetry();
       this._notifyState();
     }
   }
@@ -166,8 +207,37 @@ export class DiceVisionClient {
     }
 
     this.reconnectAttempts = 0;
+    this._stopBackgroundRetry();
     this.pendingChatRoll = false;
     this._notifyState();
+  }
+
+  /** Stop retrying in the background (connected, disconnected, or the session is invalid). */
+  _stopBackgroundRetry() {
+    if (this.backgroundRetryTimeout) {
+      clearTimeout(this.backgroundRetryTimeout);
+      this.backgroundRetryTimeout = null;
+    }
+    this.backgroundRetry = false;
+  }
+
+  /** Try again in BACKGROUND_RETRY_MS, quietly: no toasts, and the session still reads as not connected. */
+  _scheduleBackgroundRetry() {
+    this.backgroundRetry = true;
+    if (this.backgroundRetryTimeout) clearTimeout(this.backgroundRetryTimeout);
+    this.backgroundRetryTimeout = setTimeout(() => {
+      this.backgroundRetryTimeout = null;
+      if (this.sessionCode) this._openSocket(this.sessionCode);
+    }, BACKGROUND_RETRY_MS);
+  }
+
+  /**
+   * Whether disconnect() has anything to stop: a socket (connected or not yet
+   * confirmed), a pending quick reconnect, or the background retry.
+   * @returns {boolean}
+   */
+  hasConnection() {
+    return !!this.ws || !!this.reconnectTimeout || this.backgroundRetry;
   }
 
   /** @returns {boolean} Whether the client is currently connected. */
@@ -305,7 +375,8 @@ export class DiceVisionClient {
   getState() {
     return {
       connected: this.isConnected(),
-      sessionActive: !!this.ws || !!this.reconnectTimeout,
+      // A background retry's socket doesn't count: until it connects, the session stays given up
+      sessionActive: (!!this.ws && !this.backgroundRetry) || !!this.reconnectTimeout,
       sessionCode: this.sessionCode,
       reconnectAttempt: this.reconnectAttempts,
       reconnectMax: MAX_RECONNECT_ATTEMPTS,
@@ -387,6 +458,7 @@ export class DiceVisionClient {
     console.log("[DiceVision] Session info:", message);
     this.connected = true;
     this.reconnectAttempts = 0;
+    this._stopBackgroundRetry();
 
     if (this._shouldWait()) {
       this.sendWaiting();
@@ -539,7 +611,11 @@ export class DiceVisionClient {
     }
   }
 
-  /** Attempt reconnection with doubling backoff (2s → 30s cap), max 5 attempts. */
+  /**
+   * Attempt reconnection with doubling backoff (2s → 30s cap), max 5 attempts;
+   * then give up (Replace mode rolls digitally again) but keep retrying quietly
+   * every BACKGROUND_RETRY_MS.
+   */
   _attemptReconnect() {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       console.log("[DiceVision] Max reconnection attempts reached");
@@ -549,6 +625,8 @@ export class DiceVisionClient {
       this._warnReplaceDigital();
       this.pendingChatRoll = false;
       this.reconnectAttempts = 0;
+      this._scheduleBackgroundRetry();
+      this._notifyState();
       return;
     }
 

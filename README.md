@@ -43,7 +43,7 @@ Every Foundry roll waits for your physical dice while DiceVision is connected. T
 - **Exploding dice and rerolls** ask for another die.
 - **Camera trouble?** Click **Submit** in the dialog to roll whatever is still missing digitally. For an extra die from an explosion or reroll, click the arrow next to it.
 - Die types DiceVision doesn't support (d2, d3, coins) are rolled digitally, and a notice says so.
-- **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, an invalid session code, or once reconnecting gives up, Foundry rolls digitally as usual, and a warning says so.
+- **Connection drops:** while DiceVision reconnects, the dialog still opens and says DiceVision isn't connected. Click Submit to roll digitally. After `/dv disconnect`, an invalid session code, or once reconnecting gives up, Foundry rolls digitally as usual, and a warning says so. After giving up, DiceVision keeps trying every 30 seconds in the background, and at once when you return to the Foundry tab or your network comes back; once it reconnects, physical dice take over again.
 - Blind `/roll`s are rolled digitally by Foundry.
 
 To use physical dice only for some die types (say, d20s), set Operating Mode to **Off** and choose **DiceVision** for those dice in **Core › Dice Configuration**. DiceVision still connects (with Auto-Connect on). Those dice open the dialog even while DiceVision is disconnected; click Submit to roll them digitally. A **Default** method set in Dice Configuration overrides Replace mode for every die.
