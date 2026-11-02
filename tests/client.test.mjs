@@ -386,6 +386,19 @@ await test("Connect while retrying in the background starts a normal connection"
   check(c.getState().sessionActive === true, "reads as connecting");
 });
 
+await test("a background attempt whose WebSocket can't be created stops retrying", (c) => {
+  connectConfirmed(c);
+  failAllRetries();
+  globalThis.WebSocket = class { constructor() { throw new SyntaxError("bad url"); } };
+  try {
+    runTimers();
+  } finally {
+    globalThis.WebSocket = FakeWebSocket;
+  }
+  check(c.backgroundRetry === false && timers.length === 0, "background retry cleared");
+  check(c.hasConnection() === false, "nothing left to disconnect");
+});
+
 await test("open without confirmation does not reset the retry counter", (c) => {
   connectConfirmed(c);
   sockets.at(-1).serverClose(1006);
@@ -969,6 +982,20 @@ await test("/dv disconnect: disconnects, or says it wasn't connected", async (c)
   chatLine("/dv disconnect");
   await flush();
   check(chat.at(-1)?.content === "DICEVISION.Commands.AlreadyDisconnected", "already disconnected");
+});
+
+await test("/dv disconnect stops the background retry after giving up", async (c) => {
+  registerChatControls(c);
+  connectConfirmed(c);
+  failAllRetries();
+  chatLine("/dv disconnect");
+  await flush();
+  check(chat.at(-1)?.content !== "DICEVISION.Commands.AlreadyDisconnected", "not reported as already disconnected");
+  check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.Disconnected", "disconnected");
+  check(timers.length === 0 && c.retryNow() === false, "background retry stopped");
+  chatLine("/dv disconnect");
+  await flush();
+  check(chat.at(-1)?.content === "DICEVISION.Commands.AlreadyDisconnected", "then already disconnected");
 });
 
 await test("a failing command shows an error notification", async (c) => {

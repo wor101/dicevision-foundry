@@ -188,6 +188,8 @@ export class DiceVisionClient {
       this._warnReplaceDigital();
       this.ws = null;
       this.sessionCode = null;
+      // A background attempt that throws has no code left to retry
+      this._stopBackgroundRetry();
       this._notifyState();
     }
   }
@@ -227,6 +229,15 @@ export class DiceVisionClient {
       this.backgroundRetryTimeout = null;
       if (this.sessionCode) this._openSocket(this.sessionCode);
     }, BACKGROUND_RETRY_MS);
+  }
+
+  /**
+   * Whether disconnect() has anything to stop: a socket (connected or not yet
+   * confirmed), a pending quick reconnect, or the background retry.
+   * @returns {boolean}
+   */
+  hasConnection() {
+    return !!this.ws || !!this.reconnectTimeout || this.backgroundRetry;
   }
 
   /** @returns {boolean} Whether the client is currently connected. */

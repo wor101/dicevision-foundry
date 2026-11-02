@@ -153,7 +153,7 @@ async function handleCommand(client, [sub = "help", arg]) {
       break;
 
     case "disconnect":
-      if (!client.isConnected() && !client.reconnectTimeout) return reply("DICEVISION.Commands.AlreadyDisconnected");
+      if (!client.hasConnection()) return reply("DICEVISION.Commands.AlreadyDisconnected");
       client.disconnect();
       ui.notifications.info(game.i18n.localize("DICEVISION.Notifications.Disconnected"));
       break;
