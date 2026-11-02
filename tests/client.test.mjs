@@ -328,7 +328,7 @@ await test("after giving up, retries quietly every BACKGROUND_RETRY_MS and recov
   check(timers.length === 1 && timers[0].ms === BACKGROUND_RETRY_MS, "next background retry scheduled");
   check(c.getState().sessionActive === false, "still given up");
   // Back: connects, re-registers as waiting (continuous), and stops retrying
-  ran = runTimers();
+  runTimers();
   const ws = sockets.at(-1);
   ws.open();
   ws.confirm();
