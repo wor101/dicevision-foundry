@@ -138,7 +138,7 @@ function reset() {
 }
 
 reset();
-const { DiceVisionClient } = await import("../scripts/dicevision-client.js");
+const { DiceVisionClient, BACKGROUND_RETRY_MS } = await import("../scripts/dicevision-client.js");
 const chatControls = await import("../scripts/chat-controls.js");
 const { registerChatControls } = chatControls;
 const { registerSettings } = await import("../scripts/settings.js");
@@ -293,11 +293,11 @@ await test("bad messages don't break later rolls", async (c) => {
 // Reconnect
 // ---------------------------------------------------------------------------
 
-/** Drop the current socket and let every retry fail without opening. */
+/** Drop the current socket and let every quick retry fail without opening (the background retry is left pending). */
 function failAllRetries() {
   sockets.at(-1).serverClose(1006);
   const delays = [];
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 5; i++) {
     const ran = runTimers();
     if (!ran.length) break;
     delays.push(...ran);
@@ -311,14 +311,86 @@ await test("reconnect uses doubling backoff and stops after 5 attempts", (c) => 
   const delays = failAllRetries();
   check(JSON.stringify(delays) === "[2000,4000,8000,16000,30000]", `delays ${JSON.stringify(delays)}`);
   check(toasts.at(-1)?.[1] === "DICEVISION.Notifications.MaxReconnect", "MaxReconnect warning");
-  check(timers.length === 0, "nothing scheduled after giving up");
+  check(timers.length === 1 && timers[0].ms === BACKGROUND_RETRY_MS, "only the background retry scheduled after giving up");
+  check(c.getState().sessionActive === false, "reads as given up");
+});
+
+await test("after giving up, retries quietly every BACKGROUND_RETRY_MS and recovers on its own", (c) => {
+  connectConfirmed(c);
+  failAllRetries();
+  const toastCount = toasts.length;
+  // Still down: no toasts, still given up, and another retry scheduled
+  let ran = runTimers();
+  check(JSON.stringify(ran) === `[${BACKGROUND_RETRY_MS}]`, `background delay ${JSON.stringify(ran)}`);
+  check(c.getState().sessionActive === false, "the attempt doesn't read as connecting");
+  sockets.at(-1).serverClose(1006);
+  check(toasts.length === toastCount, `no toasts: ${JSON.stringify(toasts.slice(toastCount))}`);
+  check(timers.length === 1 && timers[0].ms === BACKGROUND_RETRY_MS, "next background retry scheduled");
+  check(c.getState().sessionActive === false, "still given up");
+  // Back: connects, re-registers as waiting (continuous), and stops retrying
+  ran = runTimers();
+  const ws = sockets.at(-1);
+  ws.open();
+  ws.confirm();
+  check(c.getState().connected === true && c.getState().sessionActive === true, "connected");
+  check(ws.sentTypes().includes("waiting"), "waiting sent once reconnected");
+  check(timers.length === 0, "no retry left scheduled");
+  // A later drop starts the quick retries again
+  ws.serverClose(1006);
+  check(timers.length === 1 && timers[0].ms === 2000, "quick retries again after a later drop");
+});
+
+await test("a background retry's socket that opens but isn't confirmed stays given up", (c) => {
+  connectConfirmed(c);
+  failAllRetries();
+  runTimers();
+  sockets.at(-1).open();
+  check(c.getState().sessionActive === false, "not active until confirmed");
+  sockets.at(-1).serverClose(1011);
+  check(timers.length === 1 && timers[0].ms === BACKGROUND_RETRY_MS, "background retry scheduled again");
+});
+
+await test("retryNow (tab visible, network back) tries at once only while retrying in the background", (c) => {
+  connectConfirmed(c);
+  check(c.retryNow() === false, "no-op while connected");
+  sockets.at(-1).serverClose(1006);
+  check(c.retryNow() === false, "no-op during quick retries");
+  failAllRetries();
+  const count = sockets.length;
+  check(c.retryNow() === true, "tries while given up");
+  check(sockets.length === count + 1, "opened a socket");
+  check(timers.length === 0, "pending background timer cancelled");
+  check(c.retryNow() === false, "no second attempt while one is in flight");
+});
+
+await test("disconnect and an invalid session stop the background retry", (c) => {
+  connectConfirmed(c);
+  failAllRetries();
+  c.disconnect();
+  check(timers.length === 0, "disconnect cancels it");
+  check(c.retryNow() === false, "retryNow does nothing after disconnect");
+
+  connectConfirmed(c);
+  failAllRetries();
+  runTimers();
+  sockets.at(-1).serverClose(4001);
+  check(timers.length === 0, "nothing scheduled after 4001");
+  check(c.getState().sessionCode === null, "session dropped");
+});
+
+await test("Connect while retrying in the background starts a normal connection", (c) => {
+  connectConfirmed(c);
+  failAllRetries();
+  c.connect("XKRM4N7B");
+  check(timers.length === 0, "background timer cancelled");
+  check(c.getState().sessionActive === true, "reads as connecting");
 });
 
 await test("open without confirmation does not reset the retry counter", (c) => {
   connectConfirmed(c);
   sockets.at(-1).serverClose(1006);
   const delays = [];
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 5; i++) {
     const ran = runTimers();
     if (!ran.length) break;
     delays.push(...ran);
